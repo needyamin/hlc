@@ -3,47 +3,80 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Heavy Load Checker - core diagrams</title>
+<title>Heavy Load Checker - core diagrams &amp; developer reference</title>
 <style>
   :root { color-scheme: light; }
   body { margin:0; padding:32px 18px 64px; background:#f4f7fb; color:#16202c;
          font:15px/1.6 "Segoe UI",Arial,Helvetica,sans-serif; }
   main { max-width:1180px; margin:0 auto; }
-  h1 { font-size:26px; margin:0 0 6px; }
-  .lead { color:#5b6b7d; margin:0 0 26px; }
+  h1 { font-size:27px; margin:0 0 6px; }
+  .lead { color:#5b6b7d; margin:0 0 20px; }
   nav { background:#fff; border:1px solid #d8e1ec; border-radius:10px;
-        padding:14px 18px; margin-bottom:28px; }
-  nav a { color:#2563eb; text-decoration:none; margin-right:18px;
-          white-space:nowrap; font-size:13px; }
+        padding:14px 18px; margin-bottom:18px; }
+  nav a { color:#2563eb; text-decoration:none; margin-right:16px;
+          white-space:nowrap; font-size:12.5px; }
   nav a:hover { text-decoration:underline; }
+  nav .sep { display:block; height:1px; background:#e6ecf4; margin:11px 0; }
+  nav .reflink { color:#0b5c53; font-weight:700; }
+  .legend, .callout { background:#fff; border:1px solid #d8e1ec;
+        border-left:4px solid #2563eb; border-radius:9px;
+        padding:13px 18px; margin:0 0 24px; font-size:13px; color:#3f4c5c; }
+  .callout { background:#fff8ea; border-color:#f0d9a8; border-left-color:#c07a12; }
+  .legend b, .callout b { color:#16202c; }
   section { background:#fff; border:1px solid #d8e1ec; border-radius:12px;
             padding:22px 22px 12px; margin:0 0 26px; }
-  section h2 { font-size:18px; margin:0 0 4px; }
+  section h2 { font-size:19px; margin:0 0 4px; }
   section p { color:#5b6b7d; margin:0 0 16px; font-size:13px; }
   section svg { width:100%; height:auto; display:block; }
+  .devnotes { margin:2px 0 14px; padding:13px 18px; background:#f8fafc;
+        border:1px solid #e2e9f2; border-left:4px solid #2563eb; border-radius:8px; }
+  .devnotes h3 { font-size:11.5px; margin:0 0 8px; color:#12336b;
+        text-transform:uppercase; letter-spacing:.05em; }
+  .devnotes ul { margin:0; padding-left:18px; font-size:12.8px; color:#3f4c5c; }
+  .devnotes li { margin:5px 0; }
+  .ref h3 { font-size:14px; margin:20px 0 4px; color:#0b5c53; }
+  .ref h3:first-child { margin-top:4px; }
+  code { background:#eef2f8; border:1px solid #dde5ef; border-radius:4px;
+        padding:1px 5px; font:12px/1.5 Consolas,"Courier New",monospace;
+        color:#12336b; white-space:nowrap; }
+  table { width:100%; border-collapse:collapse; font-size:12.8px; margin:6px 0 18px; }
+  th, td { text-align:left; padding:8px 11px; border-bottom:1px solid #e6ecf4;
+           vertical-align:top; }
+  th { background:#f4f7fb; color:#3f4c5c; font-size:11px;
+       text-transform:uppercase; letter-spacing:.04em; }
+  tbody tr:hover { background:#fafbfd; }
+  td:first-child { width:31%; }
+  ol.inv { padding-left:20px; font-size:13px; color:#3f4c5c; margin:4px 0 14px; }
+  ol.inv li { margin:8px 0; }
+  ol.inv strong { color:#16202c; }
   footer { color:#5b6b7d; font-size:12px; text-align:center; margin-top:30px; }
-  @media print { body { background:#fff; } section { break-inside:avoid; } }
+  @media print { body { background:#fff; } section, .devnotes, table {
+      break-inside:avoid; } nav { display:none; } }
 </style>
 </head>
 <body><main>
-<h1>Heavy Load Checker - core diagrams</h1>
-<p class="lead">Six diagrams explaining the system end to end. This page is a
-single file: all SVGs are inlined, no JavaScript, no network requests.</p>
+<h1>Heavy Load Checker - core diagrams &amp; developer reference</h1>
+<p class="lead">Six diagrams explaining the system end to end, each followed by
+concrete developer notes, plus a compact engineering reference (modules, config,
+result schema, SLOs, API and invariants). This page is a single file: all SVGs
+are inlined, no JavaScript, no network requests.</p>
 <nav>
-<a href="#d1">01 - System context</a><a href="#d2">02 - Module architecture</a><a href="#d3">03 - One run, start to finish</a><a href="#d4">04 - Data flow: raw bytes to verdict</a><a href="#d5">05 - Modes and the comparability gate</a><a href="#d6">06 - Language runtime comparison</a></nav>
+<a href="#d1">01 - System context</a><a href="#d2">02 - Module architecture</a><a href="#d3">03 - One run, start to finish</a><a href="#d4">04 - Data flow: raw bytes to verdict</a><a href="#d5">05 - Modes and the comparability gate</a><a href="#d6">06 - Language runtime comparison</a><span class="sep"></span><a class="reflink" href="#ref">Developer reference (commands / modules / config / schema / SLOs / API)</a><a class="reflink" href="#invariants">Invariants &amp; gotchas</a><a class="reflink" href="#glossary">Glossary</a></nav>
+<div class="callout"><b>If you only remember three things:</b> (1) an HTTP client can never see server CPU/RAM - that needs the Docker read path; (2) every run produces one <code>results.json</code> from <code>raw.jsonl</code> + cgroup samples, and nothing is estimated; (3) the language comparison and the HTTP load test answer <em>different questions</em> - never compare their numbers.</div>
+<div class="legend"><b>Diagram legend:</b> solid box = always on, dashed box = optional / best effort, blue = HTTP path, violet = Docker / instrumentation read path, green = output artifact, amber = caveat or decision, red = integrity gate or a hard "no".</div>
 <section id="d1"><p>Two read paths, one network boundary. An external HTTP client can never see server CPU, RAM or OOM events.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="ttl1 dsc1">
-<title id="ttl1">01 - System context</title>
-<desc id="dsc1">Where every number comes from - and the one boundary an external client cannot cross.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="ttl-1 dsc-1">
+<title id="ttl-1">01 - System context</title>
+<desc id="dsc-1">Where every number comes from - and the one boundary an external client cannot cross.</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="700" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">01 - System context</text>
@@ -88,8 +121,8 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="360" y="522" width="4" height="52" rx="2" fill="#6d4bd8" stroke="#6d4bd8" stroke-width="0"/>
 <text x="374" y="544" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">runtime_comparison.py</text>
 <text x="374" y="560.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">5 language toolchains</text>
-<polyline points="330.0,319.0 360.0,319.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue)"/>
-<polyline points="330.0,397.0 360.0,397.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet)" stroke-dasharray="7 5"/>
+<polyline points="330.0,319.0 360.0,319.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue-1)"/>
+<polyline points="330.0,397.0 360.0,397.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet-1)" stroke-dasharray="7 5"/>
 <rect x="670" y="150" width="225" height="62" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
 <text x="782.5" y="177.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">Target app container</text>
 <text x="782.5" y="193.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">e.g. spid3rweb-app :8000</text>
@@ -115,8 +148,8 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="1027.5" y="417.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#432a91" text-anchor="middle">Spid3r 1.0.0 binary</text>
 <text x="1027.5" y="433.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">in-Docker language benchmark</text>
 <line x1="600" y1="118" x2="600" y2="580" stroke="#c0392b" stroke-width="2" stroke-dasharray="8 6"/>
-<polyline points="530.0,317.0 578.0,317.0 578.0,181.0 670.0,181.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue)"/>
-<polyline points="530.0,397.0 622.0,397.0 622.0,261.0 670.0,261.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet)" stroke-dasharray="7 5"/>
+<polyline points="530.0,317.0 578.0,317.0 578.0,181.0 670.0,181.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue-1)"/>
+<polyline points="530.0,397.0 622.0,397.0 622.0,261.0 670.0,261.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet-1)" stroke-dasharray="7 5"/>
 <rect x="670" y="470" width="470" height="100" rx="8" fill="#fff2dc" stroke="#c07a12" stroke-width="1.1"/>
 <rect x="670" y="470" width="4" height="100" rx="2" fill="#c07a12" stroke="#c07a12" stroke-width="0"/>
 <text x="684" y="493" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="start">What this means</text>
@@ -136,20 +169,21 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="656" x2="1164" y2="656" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="676" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/engine.py, samplers.py, collectors/, docker_probe.py, server.py, docs/benchmark-modes.md</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 01 - System context</h3><ul><li><code>heavyload/http_client.py</code> owns <code>make_connection()</code> and one-shot <code>probe()</code>; the load generator never uses anything else to reach the target.</li><li><code>docker_probe.py</code> provides <code>list_containers()</code>, <code>resolve_container()</code>, <code>cgroup_caps()</code> and <code>docker_available()</code> - all via the Docker CLI, no SDK.</li><li><code>collectors/cgroup.py</code> runs ONE Python process inside the container and reads <code>memory.stat anon</code>, <code>memory.current</code>, <code>memory.peak</code>, <code>cpu.stat</code>, <code>io.stat</code>, <code>*.pressure</code> and <code>pids.current</code> with plain <code>open()</code>.</li><li>If the container has no <code>python3</code>, <code>samplers.py</code> falls back to <code>collector_mode=legacy_shell</code> (forks grep/awk/sleep); idle CPU can read 8-15% instead of ~0.85%. Always check <code>environment.fingerprint.collector_mode</code>.</li><li>On Windows the cgroup files live in the WSL2 VM: reachable only via <code>docker exec</code>. Target, VM and load generator share physical cores.</li></ul></div>
 </section>
 <section id="d2"><p>Three entry points, one runner, pluggable collectors, one result document. Dashed boxes are optional.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="ttl2 dsc2">
-<title id="ttl2">02 - Module architecture</title>
-<desc id="dsc2">Three entry points, one orchestrator, pluggable collectors, one immutable result document.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="ttl-2 dsc-2">
+<title id="ttl-2">02 - Module architecture</title>
+<desc id="dsc-2">Three entry points, one orchestrator, pluggable collectors, one immutable result document.</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="840" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">02 - Module architecture</text>
@@ -170,13 +204,13 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="330" y="190" width="510" height="62" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="585.0" y="218.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#0b5c53" text-anchor="middle">heavyload/runner.run_benchmark()</text>
 <text x="585.0" y="234.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">preflight (6 checks) - resolve container - create run dir - orchestrate</text>
-<polyline points="585.0,252.0 585.0,272.0 180.0,272.0 180.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="585.0,252.0 585.0,272.0 450.0,272.0 450.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="585.0,252.0 585.0,272.0 720.0,272.0 720.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="585.0,252.0 585.0,272.0 990.0,272.0 990.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="180.0,160.0 180.0,176.0 585.0,176.0 585.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="450.0,160.0 450.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="720.0,160.0 720.0,176.0 585.0,176.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="585.0,252.0 585.0,272.0 180.0,272.0 180.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="585.0,252.0 585.0,272.0 450.0,272.0 450.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="585.0,252.0 585.0,272.0 720.0,272.0 720.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="585.0,252.0 585.0,272.0 990.0,272.0 990.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="180.0,160.0 180.0,176.0 585.0,176.0 585.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="450.0,160.0 450.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="720.0,160.0 720.0,176.0 585.0,176.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
 <rect x="60" y="292" width="240" height="72" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="180.0" y="324.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0b5c53" text-anchor="middle">engine.Benchmark</text>
 <text x="180.0" y="340.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">worker pool - 8 phases - guardrails</text>
@@ -198,17 +232,17 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="600" y="392" width="564" height="60" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6" stroke-dasharray="6 4"/>
 <text x="882.0" y="418.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">series.runtime_series / series.browser_series</text>
 <text x="882.0" y="434.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">attached only when the optional adapter / browser is available</text>
-<polyline points="180.0,364.0 180.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="450.0,364.0 450.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="882.0,364.0 882.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="720.0,364.0 720.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
-<polyline points="1017.0,364.0 1017.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<polyline points="180.0,364.0 180.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="450.0,364.0 450.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="882.0,364.0 882.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="720.0,364.0 720.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)" stroke-dasharray="7 5"/>
+<polyline points="1017.0,364.0 1017.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)" stroke-dasharray="7 5"/>
 <rect x="60" y="480" width="1104" height="54" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="612.0" y="511.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#0b5c53" text-anchor="middle">results{}  -  metrics.http + metrics.resources + series  (assembled by engine.run())</text>
-<polyline points="180.0,452.0 180.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="450.0,452.0 450.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="882.0,452.0 882.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
-<polyline points="1017.0,452.0 1017.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<polyline points="180.0,452.0 180.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="450.0,452.0 450.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="882.0,452.0 882.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)" stroke-dasharray="7 5"/>
+<polyline points="1017.0,452.0 1017.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)" stroke-dasharray="7 5"/>
 <rect x="60" y="562" width="340" height="64" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
 <text x="230.0" y="590.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#7c4a05" text-anchor="middle">grading.grade()  S1-S9</text>
 <text x="230.0" y="606.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">findings - health score 0-100 - GO / NO-GO</text>
@@ -218,9 +252,9 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="800" y="562" width="364" height="64" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
 <text x="982.0" y="590.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">runtime_comparison.run()</text>
 <text x="982.0" y="606.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">cross-language compute (runs AFTER the HTTP schedule)</text>
-<polyline points="210.0,534.0 210.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="600.0,534.0 600.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="982.0,534.0 982.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="210.0,534.0 210.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="600.0,534.0 600.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="982.0,534.0 982.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
 <rect x="60" y="654" width="340" height="60" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
 <text x="230.0" y="680.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">report.build() -&gt; report.html</text>
 <text x="230.0" y="696.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">self-contained: inline SVG, no JS / CDN</text>
@@ -230,9 +264,9 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="800" y="654" width="364" height="60" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
 <text x="982.0" y="680.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#0d5427" text-anchor="middle">runtime_comparison.json / .html + sources/</text>
 <text x="982.0" y="696.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">also linked from report.html section 11</text>
-<polyline points="230.0,626.0 230.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="600.0,626.0 600.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="982.0,626.0 982.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="230.0,626.0 230.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="600.0,626.0 600.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
+<polyline points="982.0,626.0 982.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-2)"/>
 <rect x="60" y="732" width="1104" height="48" rx="8" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.1"/>
 <rect x="60" y="732" width="4" height="48" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
 <text x="74" y="755" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="start">Live UI path</text>
@@ -240,20 +274,21 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="796" x2="1164" y2="796" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="816" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/runner.py, engine.py, grading.py, schema/, report.py, paths.py, runtime_comparison.py, server.py</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 02 - Module architecture</h3><ul><li><code>runner.run_benchmark(cfg, root, log, preflight_result, bench_holder)</code> is the SINGLE orchestrator - <code>cli.py</code> and <code>server.py /api/run/start</code> both call it, so a feature added there works in both UIs.</li><li><code>engine.Benchmark.run()</code> returns the <code>results{}</code> dict; <code>grading.grade()</code> adds <code>adjudication</code>, <code>schema.ensure_current()</code> adds v2 identity fields.</li><li><code>runtime_comparison.run()</code> is wrapped in try/except: any exception becomes <code>status=error</code> + a warning in <code>results.json</code>, never a lost run.</li><li><code>report.build()</code> emits one self-contained HTML (inline SVG charts, no JS); <code>paths.SAFE_ARTIFACTS</code> is the whitelist used by <code>server.py</code> for <code>/runs/&lt;run-id&gt;/&lt;artifact&gt;</code>.</li><li>UI liveness: <code>server.py</code> reads <code>status.json</code>; <code>ui/app.js</code> polls <code>/api/status</code> and <code>/api/log</code> at 1 Hz. No WebSockets, no framework.</li></ul></div>
 </section>
 <section id="d3"><p>Eight orchestration steps and the eight HTTP phases. The language comparison deliberately runs last.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="ttl3 dsc3">
-<title id="ttl3">03 - One run, start to finish</title>
-<desc id="dsc3">The eight orchestration steps (top) and the eight HTTP phases of the smoke profile (bottom).</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="ttl-3 dsc-3">
+<title id="ttl-3">03 - One run, start to finish</title>
+<desc id="dsc-3">The eight orchestration steps (top) and the eight HTTP phases of the smoke profile (bottom).</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="780" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">03 - One run, start to finish</text>
@@ -269,43 +304,43 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="262.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runs/run-&lt;stamp&gt;/</text>
 <text x="262.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">write config.json</text>
 <text x="262.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ preflight.json</text>
-<polyline points="186.0,164.0 199.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="186.0,164.0 199.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="339.0" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="402.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">3  Instrument</text>
 <text x="402.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">start sampler threads</text>
 <text x="402.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ in-container</text>
 <text x="402.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">collector process</text>
-<polyline points="325.5,164.0 339.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="325.5,164.0 339.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="478.5" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="541.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">4  Drive load</text>
 <text x="541.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">8 phases, guardrails,</text>
 <text x="541.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">per-request raw.jsonl</text>
 <text x="541.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ health probes</text>
-<polyline points="465.0,164.0 478.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="465.0,164.0 478.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="618.0" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="681.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">5  Aggregate</text>
 <text x="681.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">stop workers,</text>
 <text x="681.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">latency percentiles,</text>
 <text x="681.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">resource series</text>
-<polyline points="604.5,164.0 618.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="604.5,164.0 618.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="757.5" y="112" width="126" height="104" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
 <text x="820.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">6  Adjudicate</text>
 <text x="820.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">grade S1-S9,</text>
 <text x="820.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">schema v2 normalize,</text>
 <text x="820.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">verdict + score</text>
-<polyline points="744.0,164.0 757.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="744.0,164.0 757.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="897.0" y="112" width="126" height="104" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
 <text x="960.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#432a91" text-anchor="middle">7  Compare</text>
 <text x="960.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runtime_comparison</text>
 <text x="960.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">(FAILURE-SAFE, after</text>
 <text x="960.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">the HTTP result)</text>
-<polyline points="883.5,164.0 897.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="883.5,164.0 897.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <rect x="1036.5" y="112" width="126" height="104" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
 <text x="1099.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0d5427" text-anchor="middle">8  Publish</text>
 <text x="1099.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">results.json,</text>
 <text x="1099.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">report.html, status.json</text>
 <text x="1099.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ comparison files</text>
-<polyline points="1023.0,164.0 1036.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="1023.0,164.0 1036.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-3)"/>
 <text x="60" y="254" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">SMOKE PROFILE  -  8 phases, ~33 s total, peak C=20 (quick ~3.5 min / standard ~24 min share the same shape)</text>
 <rect x="60.0" y="276" width="96.36363636363636" height="66" rx="7" fill="#eff3f8" stroke="#7a8899" stroke-width="1.4"/>
 <text x="108.18181818181819" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">01 plateau</text>
@@ -343,7 +378,7 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="1111.818181818182" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=0</text>
 <text x="1111.818181818182" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
 <text x="1111.818181818182" y="358" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#7c4a05" text-anchor="middle">S7 availability</text>
-<polyline points="60,268 1164,268" fill="none" stroke="#7a8899" stroke-width="1.5" marker-end="url(#ar_gray)"/>
+<polyline points="60,268 1164,268" fill="none" stroke="#7a8899" stroke-width="1.5" marker-end="url(#ar_gray-3)"/>
 <text x="60" y="392" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">time  -&gt;</text>
 <rect x="60" y="412" width="540" height="66" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
 <text x="330.0" y="441.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#7c4a05" text-anchor="middle">Guardrails can abort early</text>
@@ -373,20 +408,21 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="736" x2="1164" y2="736" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="756" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/config.py (preset_phases), engine.py (_run_phase / _guard_check), runner.py (run_benchmark), grading.py (S1-S9)</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 03 - One run, start to finish</h3><ul><li><code>config.preset_phases(name)</code> returns the 8 phases; profiles only change durations (smoke ~33 s, quick ~3.5 min, standard ~24 min).</li><li><code>engine._run_phase()</code> drives one phase, <code>_worker()</code> issues requests, <code>_writer()</code> appends one JSON line per request to <code>raw.jsonl</code>, <code>_guard_check()</code> can set <code>_set_abort(reason)</code>.</li><li>Guardrails come from <code>config.guardrails</code>: <code>max_anon_mib</code>, <code>min_host_free_gb</code>, <code>max_error_rate_pct</code>, <code>max_consecutive_failures</code>. On abort, <code>cooldown_s</code> + <code>reprobe_s</code> still run and partial results are written.</li><li>Step 7 sits after <code>ensure_current()</code> on purpose - the HTTP result is already aggregated and graded before a single language program is spawned.</li></ul></div>
 </section>
 <section id="d4"><p>Every published number traces back to a raw line, a cgroup sample or a verified timing.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="ttl4 dsc4">
-<title id="ttl4">04 - Data flow: raw bytes to verdict</title>
-<desc id="dsc4">Every published number is traceable back to a raw line, a cgroup sample or a verified timing.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="ttl-4 dsc-4">
+<title id="ttl-4">04 - Data flow: raw bytes to verdict</title>
+<desc id="dsc-4">Every published number is traceable back to a raw line, a cgroup sample or a verified timing.</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="740" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">04 - Data flow: raw bytes to verdict</text>
@@ -462,23 +498,23 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="1042.0" y="515.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#0d5427" text-anchor="middle">runtime_comparison.*</text>
 <text x="1042.0" y="530.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">json + html + sources/ + report</text>
 <text x="1042.0" y="545.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">section 11</text>
-<polyline points="300.0,172.0 340.0,172.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="300.0,284.0 340.0,284.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="300.0,396.0 340.0,396.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="300.0,508.0 340.0,508.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="580.0,172.0 620.0,172.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="580.0,284.0 620.0,284.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="580.0,396.0 620.0,396.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="580.0,508.0 620.0,508.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
-<polyline points="880.0,208.0 900.0,208.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="880.0,355.0 900.0,355.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="880.0,487.0 900.0,487.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="300.0,172.0 340.0,172.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="300.0,284.0 340.0,284.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="300.0,396.0 340.0,396.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="300.0,508.0 340.0,508.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="580.0,172.0 620.0,172.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="580.0,284.0 620.0,284.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="580.0,396.0 620.0,396.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="580.0,508.0 620.0,508.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)" stroke-dasharray="7 5"/>
+<polyline points="880.0,208.0 900.0,208.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="880.0,355.0 900.0,355.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="880.0,487.0 900.0,487.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
 <line x1="900" y1="166" x2="900" y2="526" stroke="#7a8899" stroke-width="1.4"/>
-<polyline points="900.0,166.0 920.0,166.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="900.0,256.0 920.0,256.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="900.0,346.0 920.0,346.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="900.0,436.0 920.0,436.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="900.0,526.0 920.0,526.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="900.0,166.0 920.0,166.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="900.0,256.0 920.0,256.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="900.0,346.0 920.0,346.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="900.0,436.0 920.0,436.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
+<polyline points="900.0,526.0 920.0,526.0" fill="none" stroke="#7a8899" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-4)"/>
 <rect x="60" y="588" width="1104" height="88" rx="8" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.1"/>
 <rect x="60" y="588" width="4" height="88" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
 <text x="74" y="611" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="start">Traceability rule</text>
@@ -488,20 +524,21 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="696" x2="1164" y2="696" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="716" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/engine.py (_aggregate_*), grading.py, schema/metrics.py, schema/migrate.py, report.py, runtime_comparison.py</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 04 - Data flow: raw bytes to verdict</h3><ul><li><code>engine._aggregate_requests()</code> -&gt; <code>metrics.http</code> (see <code>schema/metrics.py empty_http()</code>); <code>_aggregate_samples()</code> -&gt; <code>metrics.resources</code> (<code>empty_resources()</code>). Latency keys: p50/p90/p95/p99/max/mean.</li><li><code>grading.grade()</code> registers S1-S9, findings, <code>health_score</code> (0-100) and a GO / NO-GO / INSUFFICIENT verdict.</li><li><code>schema/migrate.py</code> performs an ADDITIVE v1 -&gt; v2 migration: no v1 key is deleted, renamed or coerced, so archived reports still render.</li><li>Writes go through <code>util.atomic_json()</code>; <code>report.py</code> draws inline SVG charts from the same dict - no second data source, no estimates.</li></ul></div>
 </section>
 <section id="d5"><p>Only runs measured from the same vantage point may be ranked.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="ttl5 dsc5">
-<title id="ttl5">05 - Benchmark modes and the comparability gate</title>
-<desc id="dsc5">Which mode you get depends on what you control - and only one mode may be ranked against another run.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="ttl-5 dsc-5">
+<title id="ttl-5">05 - Benchmark modes and the comparability gate</title>
+<desc id="dsc-5">Which mode you get depends on what you control - and only one mode may be ranked against another run.</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="760" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">05 - Benchmark modes and the comparability gate</text>
@@ -530,7 +567,7 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="86" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">pinned --cpus / --memory / --cpuset-cpus</text>
 <rect x="60" y="436" width="340" height="32" rx="16.0" fill="#e6f6ea" stroke="#18803d" stroke-width="1.2"/>
 <text x="230.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0d5427" text-anchor="middle">COMPARABLE</text>
-<polyline points="230.0,160.0 230.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="230.0,160.0 230.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-5)"/>
 <rect x="430" y="180" width="340" height="46" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
 <text x="600.0" y="207.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#7c4a05" text-anchor="middle">instrumented_live</text>
 <text x="442" y="246" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="start">visibility: server_via_adapter</text>
@@ -547,7 +584,7 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="456" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">NOT BUILT IN THIS ROUND</text>
 <rect x="430" y="436" width="340" height="32" rx="16.0" fill="#fff2dc" stroke="#c07a12" stroke-width="1.2"/>
 <text x="600.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">FUTURE ADAPTER</text>
-<polyline points="600.0,160.0 600.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="600.0,160.0 600.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-5)"/>
 <rect x="800" y="180" width="364" height="46" rx="10" fill="#fdeaea" stroke="#c0392b" stroke-width="1.6"/>
 <text x="982.0" y="207.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#822018" text-anchor="middle">live_blackbox</text>
 <text x="812" y="246" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="start">visibility: client_only</text>
@@ -564,20 +601,20 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <text x="826" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">never infer server CPU / RAM from latency</text>
 <rect x="800" y="436" width="364" height="32" rx="16.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
 <text x="982.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="middle">NOT COMPARABLE</text>
-<polyline points="982.0,160.0 982.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="982.0,160.0 982.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-5)"/>
 <text x="60" y="506" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">schema.can_compare(a, b)  -  HARD RULE, ENFORCED BEFORE ANY LEADERBOARD</text>
 <rect x="60" y="522" width="540" height="116" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
 <text x="330.0" y="568.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">ALL of these must hold</text>
 <text x="330.0" y="584.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="middle">same benchmark_mode  +  same visibility  +  same schema_version</text>
 <text x="330.0" y="600.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="middle">same workload_class  +  visibility != client_only</text>
-<polyline points="600.0,580.0 650.0,580.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="600.0,580.0 650.0,580.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-5)"/>
 <rect x="650" y="522" width="250" height="52" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
 <text x="775.0" y="552.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">FAIR COMPARISON</text>
 <rect x="920" y="522" width="244" height="52" rx="10" fill="#fdeaea" stroke="#c0392b" stroke-width="1.6"/>
 <text x="1042.0" y="552.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#822018" text-anchor="middle">NOT COMPARABLE</text>
 <rect x="980" y="484" width="164" height="24" rx="12.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
 <text x="1062.0" y="499.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#822018" text-anchor="middle">any rule fails</text>
-<polyline points="1062.0,508.0 1062.0,522.0" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_red)" stroke-dasharray="7 5"/>
+<polyline points="1062.0,508.0 1062.0,522.0" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_red-5)" stroke-dasharray="7 5"/>
 <rect x="650" y="590" width="514" height="48" rx="8" fill="#fff2dc" stroke="#c07a12" stroke-width="1.1"/>
 <rect x="650" y="590" width="4" height="48" rx="2" fill="#c07a12" stroke="#c07a12" stroke-width="0"/>
 <text x="664" y="612" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Otherwise: comparable=False + a reason; no ranking, no winner, no misleading chart.</text>
@@ -589,20 +626,21 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="716" x2="1164" y2="716" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="736" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/schema/metrics.py (can_compare, VISIBILITY_LEVELS), compare.py, report_compare.py, config.py, docs/benchmark-modes.md</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 05 - Modes and the comparability gate</h3><ul><li><code>schema/metrics.py:can_compare(a, b)</code> requires equal <code>benchmark_mode</code>, <code>visibility</code>, <code>schema_version</code> and <code>workload_class</code>, then rejects any run whose <code>visibility == "client_only"</code>.</li><li><code>VISIBILITY_LEVELS = ("full_server", "client_only", "server_via_adapter")</code>; <code>benchmark_mode=auto</code> picks <code>docker_lab</code> when <code>resolve_container()</code> finds a container.</li><li><code>compare.py</code> sets <code>comparable=False</code> + a reason and still returns raw rows; <code>report_compare.py</code> prints NOT COMPARABLE instead of a leaderboard.</li><li><code>instrumented_live</code> is a declared seam, not an implementation: add a <code>collectors/base.Collector</code> subclass for your Prometheus / APM endpoint.</li></ul></div>
 </section>
 <section id="d6"><p>Pinned workloads, real variants, one checksum gate, no simulated numbers.</p>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="ttl6 dsc6">
-<title id="ttl6">06 - Language runtime comparison pipeline</title>
-<desc id="dsc6">Three pinned workloads, identical algorithms in five languages, one checksum gate, zero simulated numbers.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="ttl-6 dsc-6">
+<title id="ttl-6">06 - Language runtime comparison pipeline</title>
+<desc id="dsc-6">Three pinned workloads, identical algorithms in five languages, one checksum gate, zero simulated numbers.</desc>
 <defs>
-<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
-<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
-<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
-<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
-<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
-<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
-<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+<marker id="ar_blue-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
 </defs>
 <rect width="1200" height="720" fill="#ffffff"/>
 <text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">06 - Language runtime comparison pipeline</text>
@@ -680,11 +718,11 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <rect x="60" y="600" width="340" height="40" rx="8" fill="#e6f6ea" stroke="#18803d" stroke-width="1.1"/>
 <rect x="60" y="600" width="4" height="40" rx="2" fill="#18803d" stroke="#18803d" stroke-width="0"/>
 <text x="74" y="622" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Production still runs tree-walk - the slowest Spid3r engine.</text>
-<polyline points="400.0,235.0 430.0,235.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="770.0,235.0 800.0,235.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="970.0,368.0 970.0,400.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="800.0,475.0 770.0,475.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<polyline points="430.0,475.0 400.0,475.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="400.0,235.0 430.0,235.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-6)"/>
+<polyline points="770.0,235.0 800.0,235.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-6)"/>
+<polyline points="970.0,368.0 970.0,400.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-6)"/>
+<polyline points="800.0,475.0 770.0,475.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-6)"/>
+<polyline points="430.0,475.0 400.0,475.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray-6)"/>
 <rect x="36" y="652" width="15" height="11" rx="3" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1"/>
 <text x="57" y="661.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">always on</text>
 <rect x="151.6" y="652" width="15" height="11" rx="3" fill="#fdeaea" stroke="#c0392b" stroke-width="1"/>
@@ -696,7 +734,11 @@ single file: all SVGs are inlined, no JavaScript, no network requests.</p>
 <line x1="36" y1="676" x2="1164" y2="676" stroke="#d8e1ec" stroke-width="1"/>
 <text x="36" y="696" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/runtime_comparison.py, runner.py, report.py (_runtime_section), cli.py, config.json</text>
 </svg>
+<div class="devnotes"><h3>Developer notes - 06 - Language runtime comparison</h3><ul><li><code>runtime_comparison.py</code>: pinned <code>PRIME_N</code>, <code>JSON_ROWS/ROUNDS</code>, <code>MAP_KEYS/ROUNDS</code> and the <code>EXPECTED</code> checksum dict. Change a constant and you MUST recompute EXPECTED or every variant is rejected.</li><li>Each generated program prints exactly two lines: <code>RESULT &lt;a&gt; &lt;b&gt;</code> and <code>TIME_US &lt;n&gt;</code>; <code>_parse_output()</code> enforces that contract.</li><li><code>_variants()</code> builds tree-walk, VM, VM --no-opt, <code>.matrixc</code> exec, <code>build --release</code>, rustc -O, Node, PHP, Python AND the real binary copied into the container with <code>docker cp</code>.</li><li><code>detect_tools()</code> probes toolchains; missing ones are skipped with a warning. <code>_cleanup_container()</code> removes <code>/tmp/hlc_rt_*</code> afterwards.</li><li>Spid3r has only <code>now_ms()</code> (1 ms resolution), so workloads are sized well above 28 ms. Its JSON builtin is <code>json_write</code> / <code>json_parse</code>, NOT <code>json_encode</code>.</li></ul></div>
 </section>
-<footer>Generated by docs/diagrams/generate.py - edit the generator, not this file.</footer>
+<section class="ref" id="ref"><h2>Developer reference</h2><p>A lookup sheet for the code behind the pictures. Paths are relative to the repository root; all details are taken from the current source, not from memory.</p><h3>1. Commands you will actually use</h3><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>python server.py --open</code></td><td>Web UI on 127.0.0.1:8787; polls status at 1 Hz.</td></tr><tr><td><code>python cli.py --profile smoke</code></td><td>One headless run (~33 s) + auto language comparison.</td></tr><tr><td><code>python cli.py --runtime-comparison</code></td><td>Language comparison ONLY - no HTTP traffic, store may be down.</td></tr><tr><td><code>python cli.py --no-runtime-comparison</code></td><td>Skip the comparison for this run.</td></tr><tr><td><code>python cli.py --runtime-repeats 1</code></td><td>Shorten the comparison while iterating.</td></tr><tr><td><code>python cli.py --preflight-only</code></td><td>Run the 6 read-only preflight checks and exit.</td></tr><tr><td><code>python cli.py --campaign benchmarks/lang-runtime.json</code></td><td>Phase 2 multi-site campaign.</td></tr><tr><td><code>python cli.py --compare run-a run-b --output out/</code></td><td>Compare / export existing runs.</td></tr><tr><td><code>python selftest.py</code></td><td>End-to-end regression (45 checks, ~35 s).</td></tr><tr><td><code>python -m unittest discover -s tests -v</code></td><td>Unit suite.</td></tr><tr><td><code>python docs/diagrams/generate.py</code></td><td>Regenerate these six SVGs + this page.</td></tr></tbody></table><h3>2. Module map</h3><table><thead><tr><th>Path</th><th>Responsibility</th></tr></thead><tbody><tr><td><code>heavyload/paths.py</code></td><td>ROOT, <code>runs_dir()</code>, <code>SAFE_ARTIFACTS</code>; honours <code>config.output_dir</code>.</td></tr><tr><td><code>heavyload/config.py</code></td><td>DEFAULTS, 3 profiles, 8 phases, normalize/validate/save.</td></tr><tr><td><code>heavyload/runner.py</code></td><td><code>preflight()</code> + <code>run_benchmark()</code> orchestration.</td></tr><tr><td><code>heavyload/engine.py</code></td><td><code>Benchmark</code>: workers, guardrails, <code>raw.jsonl</code>, aggregation.</td></tr><tr><td><code>heavyload/http_client.py</code> / <code>latency.py</code></td><td>Connection factory, probes, <code>Stopwatch</code> timing.</td></tr><tr><td><code>heavyload/samplers.py</code> + <code>collectors/</code></td><td>Sampler threads; cgroup / procfs / docker_stats / health / mysql.</td></tr><tr><td><code>heavyload/docker_probe.py</code></td><td>Docker CLI wrappers, container resolution, cgroup capability probe.</td></tr><tr><td><code>heavyload/grading.py</code></td><td>SLOs S1-S9, findings, health score, verdict.</td></tr><tr><td><code>heavyload/schema/</code></td><td>v2 metric contract, visibility, <code>can_compare</code>, additive v1 migration.</td></tr><tr><td><code>heavyload/report.py</code></td><td>Single self-contained HTML report (section 11 = comparison).</td></tr><tr><td><code>heavyload/runtime_comparison.py</code></td><td>Cross-language workload generator, runner and HTML report.</td></tr><tr><td><code>heavyload/adapters/</code>, <code>browser/</code></td><td>Optional runtime metrics and stdlib CDP page metrics.</td></tr><tr><td><code>heavyload/compare.py</code>, <code>campaign.py</code>, <code>report_compare.py</code></td><td>Phase 2 rankings + comparability guard.</td></tr><tr><td><code>server.py</code>, <code>ui/app.js</code></td><td>HTTP API + vanilla-JS single-page UI.</td></tr></tbody></table><h3>3. Config keys that matter</h3><table><thead><tr><th>Key</th><th>Meaning</th></tr></thead><tbody><tr><td><code>target_url</code>, <code>paths[]</code>, <code>health_path</code></td><td>What is hit and how it is health-checked.</td></tr><tr><td><code>container</code>, <code>mysql_container</code></td><td>Empty = auto-resolve from the published port / no MySQL sampler.</td></tr><tr><td><code>benchmark_mode</code></td><td><code>auto</code> | <code>docker_lab</code> | <code>live_blackbox</code> | <code>instrumented_live</code>.</td></tr><tr><td><code>profile</code> / <code>phases[]</code></td><td><code>smoke</code> / <code>quick</code> / <code>standard</code>, or an explicit 8-phase schedule.</td></tr><tr><td><code>max_concurrency</code>, <code>request_timeout_s</code>, <code>keep_alive</code></td><td>Load-generator envelope.</td></tr><tr><td><code>sample_period_s</code>, <code>stats_period_s</code></td><td>cgroup and docker-stats sampling cadence.</td></tr><tr><td><code>guardrails.*</code></td><td>Abort thresholds: anon MiB, host free GB, error rate, consecutive failures.</td></tr><tr><td><code>slo.*</code></td><td>Thresholds graded by S1-S9 (error %, p95, p99, min RPS, memory growth...).</td></tr><tr><td><code>fairness.*</code></td><td>cpuset pinning, repeats, seed, median aggregation for campaigns.</td></tr><tr><td><code>runtime_comparison.*</code></td><td>enabled / repeats / container / include_native / workloads / timeout_s.</td></tr><tr><td><code>browser</code>, <code>runtime_adapter</code></td><td>Opt-in CDP page metrics and per-language runtime endpoint.</td></tr><tr><td><code>output_dir</code></td><td>Where run directories are written (default <code>runs</code>).</td></tr></tbody></table><h3>4. The v2 result document</h3><table><thead><tr><th>Field</th><th>Contents</th></tr></thead><tbody><tr><td><code>benchmark_mode</code>, <code>visibility</code>, <code>schema_version</code></td><td>Identity + comparability triple checked by <code>can_compare()</code>.</td></tr><tr><td><code>metrics.http</code></td><td><code>rps</code>, <code>error_pct</code>, <code>latency_ms{p50,p90,p95,p99,max,mean}</code>, <code>bytes_total</code>, <code>connect_ms</code>, <code>ttfb_ms</code>, <code>total_ms</code>.</td></tr><tr><td><code>metrics.resources</code></td><td><code>cpu_pct_core</code>, <code>mem_anon_mib</code>, <code>mem_peak_bytes</code>, <code>oom_kill_events</code>, <code>pids_current</code>, <code>psi_avg10</code>, io bytes.</td></tr><tr><td><code>metrics.runtime</code>, <code>metrics.browser</code></td><td>Optional adapter / CDP fields; <code>null</code> when unavailable.</td></tr><tr><td><code>series.*</code></td><td>cgroup, procfs, health, mysql and timeline sample arrays.</td></tr><tr><td><code>environment.fingerprint</code></td><td><code>collector_mode</code>, <code>generator_pinned</code>, <code>host_shared_cpu</code>, CPU model, seed.</td></tr><tr><td><code>adjudication</code></td><td><code>verdict</code>, <code>health_score</code>, <code>slo[]</code>, <code>findings[]</code>.</td></tr><tr><td><code>runtime_comparison</code></td><td>Compact summary: status, verdict, slowdown ratios, artifact names.</td></tr></tbody></table><h3>5. SLOs graded by <code>grading.grade()</code></h3><table><thead><tr><th>ID</th><th>Check</th><th>Threshold / source</th></tr></thead><tbody><tr><td>S1</td><td>Request error rate</td><td><code>slo.max_error_pct</code> (default 0.1%)</td></tr><tr><td>S2</td><td>Successful-200 p95 latency</td><td><code>slo.max_p95_ms</code> (500 ms)</td></tr><tr><td>S3</td><td>Successful-200 p99 latency</td><td><code>slo.max_p99_ms</code> (2000 ms)</td></tr><tr><td>S4</td><td>Sustained throughput</td><td><code>slo.min_rps</code> (0 =&gt; informational)</td></tr><tr><td>S5</td><td>Bounded anonymous-memory growth</td><td><code>slo.max_memory_growth_mib</code> (256 MiB)</td></tr><tr><td>S6</td><td>Memory released after zero-load cooldown</td><td><code>slo.max_retained_pct</code> (120%)</td></tr><tr><td>S7</td><td>Availability probe success</td><td><code>slo.min_health_success_pct</code> (99%)</td></tr><tr><td>S8</td><td>No OOM kill / restart</td><td>from <code>memory.events</code> + <code>docker inspect</code></td></tr><tr><td>S9</td><td>Full schedule completed</td><td>no guardrail abort</td></tr></tbody></table><h3>6. Artifacts written per run</h3><table><thead><tr><th>File</th><th>Contents</th></tr></thead><tbody><tr><td><code>raw.jsonl</code></td><td>One JSON line per request - the ground truth for all HTTP metrics.</td></tr><tr><td><code>results.json</code></td><td>Full v2 result document (metrics, series, adjudication).</td></tr><tr><td><code>report.html</code></td><td>Self-contained HTML report: 10 sections, +11 when comparison ran.</td></tr><tr><td><code>stage2_verdict.json</code></td><td>Verdict only - for CI / automation.</td></tr><tr><td><code>status.json</code></td><td>Live KPIs consumed by <code>/api/status</code> during a run.</td></tr><tr><td><code>config.json</code>, <code>preflight.json</code></td><td>Exact effective config + the 6 preflight checks for reproducibility.</td></tr><tr><td><code>runtime_comparison.json</code></td><td>Every repeat, min/max, versions, checksums and ratios.</td></tr><tr><td><code>runtime_comparison.html</code>, <code>sources/</code></td><td>Comparison report + the exact generated programs in 5 languages.</td></tr></tbody></table><h3>7. Web API surface</h3><table><thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead><tbody><tr><td><code>/api/bootstrap</code>, <code>/api/status</code>, <code>/api/log</code></td><td>UI bootstrap + 1 Hz live state.</td></tr><tr><td><code>/api/config</code>, <code>/api/preset</code>, <code>/api/containers</code></td><td>Read / update config, presets, container list.</td></tr><tr><td><code>/api/preflight</code>, <code>/api/routes</code>, <code>/api/health</code></td><td>Read-only checks and route discovery.</td></tr><tr><td><code>/api/run/start</code>, <code>/api/run/stop</code></td><td>Start / gracefully stop a run (same runner as CLI).</td></tr><tr><td><code>/api/reports</code>, <code>/runs/&lt;id&gt;/&lt;artifact&gt;</code></td><td>List reports; serve whitelisted artifacts.</td></tr><tr><td><code>/api/campaign/*</code>, <code>/api/compare*</code>, <code>/api/export</code></td><td>Campaigns, comparison reports and CSV export.</td></tr></tbody></table><h3>8. Language benchmark contract</h3><table><thead><tr><th>Workload</th><th>Pinned constants</th><th>Expected checksum</th><th>Exercises</th></tr></thead><tbody><tr><td>A - prime</td><td><code>N = 50,000</code></td><td><code>RESULT 5133 121013308</code></td><td>pure interpreter integer loops</td></tr><tr><td>B - JSON</td><td><code>200 rows x 600 rounds</code></td><td><code>RESULT 249868800 9163</code></td><td><code>json_write</code> / <code>json_parse</code>, 9,163-char JSON</td></tr><tr><td>C - map</td><td><code>64 keys x 100,000 lookups</code></td><td><code>RESULT 44432313 100000</code></td><td>string-keyed route / session lookups</td></tr></tbody></table><p>Every variant prints <code>RESULT &lt;a&gt; &lt;b&gt;</code> and <code>TIME_US &lt;n&gt;</code>. Timing is in-process (startup excluded); the median of <code>repeats</code> runs is reported; any checksum mismatch rejects the variant.</p><h3>9. Extension seams</h3><table><thead><tr><th>When you want...</th><th>Change this</th></tr></thead><tbody><tr><td>New server metric source</td><td>Subclass <code>collectors/base.Collector</code>; <code>samplers.SamplerSet</code> picks it up.</td></tr><tr><td>New language runtime internals</td><td>Subclass <code>adapters/base.RuntimeAdapter</code> or expose <code>/__hlc/runtime</code>.</td></tr><tr><td>New benchmark profile</td><td>Add a <code>*_phases()</code> function + <code>PRESETS</code> entry in <code>config.py</code>.</td></tr><tr><td>New workload in the language comparison</td><td>Add <code>WORKLOAD_INFO</code>, <code>SOURCES[wid]</code>, <code>EXPECTED[wid]</code> in <code>runtime_comparison.py</code>.</td></tr><tr><td>New SLO</td><td>Add one <code>add(...)</code> call in <code>grading.grade()</code> (S1-S9 live there).</td></tr><tr><td>New result field</td><td>Extend <code>schema/metrics.py</code> additively; never delete or rename a v1 key.</td></tr></tbody></table></section>
+<section class="ref" id="invariants"><h2>Invariants &amp; gotchas</h2><p>Rules that are easy to break and expensive to debug. Treat these as the project's contract.</p><ol class="inv"><li><strong>Stdlib only</strong> - No pip install for the core. Optional extras (psutil, Playwright) are never required; the CDP client uses plain <code>socket</code>.</li><li><strong>No collector fails a run</strong> - Missing Docker, missing in-container <code>python3</code>, missing runtime endpoint and missing Chrome all degrade to <code>unavailable</code> labels.</li><li><strong>Additive schema</strong> - v1 keys are never deleted, renamed or coerced - archived reports keep rendering.</li><li><strong>Visibility is explicit</strong> - <code>can_compare()</code> refuses to rank a <code>client_only</code> run against a <code>docker_lab</code> run. The tool would rather say NOT COMPARABLE than print a wrong winner.</li><li><strong>Instrumentation must not perturb</strong> - One in-container Python process, no shell forks, deterministic stdin shutdown. Treat <code>collector_mode=legacy_shell</code> CPU numbers as inflated.</li><li><strong>No simulated numbers</strong> - Workload constants are pinned; a variant with a wrong checksum is REJECTED, never published; missing toolchains are skipped with a warning.</li><li><strong>Compute speed is not HTTP throughput</strong> - The language comparison measures in-process milliseconds; RPS / p99 come from the HTTP load test. Never compare the two.</li><li><strong>Comparison is failure-safe</strong> - It runs AFTER the HTTP schedule; an exception becomes a warning in <code>results.json</code> and the load result survives.</li><li><strong>Git Bash / MSYS path trap</strong> - Leading <code>/</code> args and <code>docker cp ...:/tmp/x</code> get rewritten to Windows paths. Set <code>MSYS_NO_PATHCONV=1</code> and <code>MSYS2_ARG_CONV_EXCL='*'</code> in subprocess env.</li><li><strong>Shared cores on Windows</strong> - Pin the target (<code>--cpuset-cpus</code>) and the generator (<code>fairness.cpuset_generator</code>), subtract the idle baseline, and keep <code>host_shared_cpu=true</code>. Never quote raw lab CPU% as absolute capacity.</li><li><strong>Spid3r specifics</strong> - Only <code>now_ms()</code> (1 ms resolution); JSON builtin is <code>json_write</code>, not <code>json_encode</code>. The deployed store still runs the tree-walk engine, the slowest of the measured variants.</li></ol></section>
+<section class="ref" id="glossary"><h2>Glossary</h2><p>Terms that appear in results, reports and code reviews.</p><table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody><tr><td>visibility</td><td><code>full_server</code>, <code>client_only</code> or <code>server_via_adapter</code> - what vantage point the numbers came from.</td></tr><tr><td>client_only</td><td>Only HTTP observations exist; server CPU/RAM fields are <code>unavailable</code>.</td></tr><tr><td>cgroup v2</td><td>Linux kernel accounting files; <code>memory.stat anon</code> is the canonical raw memory metric.</td></tr><tr><td>TTFB</td><td>Time to first byte; <code>latency.Stopwatch</code> splits connect / TTFB / body.</td></tr><tr><td>p99 / p95</td><td>Tail latency percentiles over successful 200 responses.</td></tr><tr><td>health score</td><td>0-100 score produced by <code>grading.grade()</code> from S1-S9.</td></tr><tr><td>collector_mode</td><td><code>python</code> (single in-container process) or <code>legacy_shell</code> (fallback, higher perturbation).</td></tr><tr><td>TIME_US</td><td>In-process compute microseconds printed by every language benchmark program.</td></tr><tr><td>checksum gate</td><td>The exact <code>RESULT &lt;a&gt; &lt;b&gt;</code> string that must match <code>EXPECTED</code> or the variant is rejected.</td></tr><tr><td>workload_class</td><td>Result identity field (default <code>http_loadtest</code>) used by <code>can_compare()</code>.</td></tr></tbody></table></section>
+<footer>Generated by <code>docs/diagrams/generate.py</code> - edit the generator, not this file. Standard library only; regenerate with <code>python docs/diagrams/generate.py</code>.</footer>
 </main></body>
 </html>

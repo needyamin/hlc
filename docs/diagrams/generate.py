@@ -867,7 +867,6 @@ GLOSSARY = [
 
 def fmt(s):
     """Escape text, turning `inline code` spans into <code> elements."""
-    import re
     out = []
     for part in re.split(r"(`[^`]+`)", str(s)):
         if len(part) > 2 and part.startswith("`") and part.endswith("`"):
@@ -890,11 +889,39 @@ def ref_section(anchor, title, lead, inner):
             % (anchor, X(title), fmt(lead), inner))
 
 
+def namespace_svg(svg, n):
+    """Give every id in one inlined SVG a per-diagram suffix.
+
+    Each standalone SVG defines the same marker ids (ar_blue, ar_violet, ...),
+    ttl and dsc. Inlining six of them into one HTML document would create
+    duplicate ids, and url(#ar_blue) could bind to another diagram's <defs>.
+    All local references (url(#...), aria-labelledby, href="#...") are rewritten
+    to match, so the page stays valid and each SVG stays self-contained.
+    """
+    names = set(re.findall(r'\bid="([^"]+)"', svg))
+
+    def suffix(m):
+        return 'id="%s-%d"' % (m.group(1), n)
+
+    out = re.sub(r'\bid="([^"]+)"', suffix, svg)
+    out = re.sub(r'url\(#([^)]+)\)',
+                 lambda m: 'url(#%s-%d)' % (m.group(1), n)
+                 if m.group(1) in names else m.group(0), out)
+    out = re.sub(r'aria-labelledby="([^"]+)"',
+                 lambda m: 'aria-labelledby="%s"' % " ".join(
+                     "%s-%d" % (x, n) if x in names else x
+                     for x in m.group(1).split()), out)
+    out = re.sub(r'href="#([^"]+)"',
+                 lambda m: 'href="#%s-%d"' % (m.group(1), n)
+                 if m.group(1) in names else m.group(0), out)
+    return out
+
+
 def build_index():
     """One self-contained HTML page: 6 inlined SVGs + engineer reference.
 
     The SVGs are embedded (not <img src>) so the page is a single file with
-    zero external requests. Repeated title/desc ids are made unique first.
+    zero external requests. namespace_svg() makes every id unique first.
     All prose lives in the data tables above, not in this HTML string.
     """
     head = """<!doctype html>
@@ -986,10 +1013,7 @@ are inlined, no JavaScript, no network requests.</p>
 
     for i, (name, title, desc, notes) in enumerate(INDEX, 1):
         svg = open(os.path.join(HERE, name), encoding="utf-8").read().strip()
-        svg = (svg.replace('id="ttl"', 'id="ttl%d"' % i)
-                  .replace('id="dsc"', 'id="dsc%d"' % i)
-                  .replace('aria-labelledby="ttl dsc"',
-                           'aria-labelledby="ttl%d dsc%d"' % (i, i)))
+        svg = namespace_svg(svg, i)
         dev = ('<div class="devnotes"><h3>Developer notes - %s</h3><ul>%s</ul></div>'
                % (X(title), "".join("<li>%s</li>" % fmt(n) for n in notes)))
         # Each SVG already draws its own title, so the section adds only a

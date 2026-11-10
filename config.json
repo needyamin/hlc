@@ -18,6 +18,18 @@
     {
       "path": "/health",
       "weight": 1
+    },
+    {
+      "path": "/",
+      "weight": 1
+    },
+    {
+      "path": "/",
+      "weight": 1
+    },
+    {
+      "path": "/",
+      "weight": 1
     }
   ],
   "headers": {},

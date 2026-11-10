@@ -36,6 +36,10 @@ They are plain inline-styled SVG — no JavaScript, no CDN, no build step — so
 they render in this README, in an IDE, and offline. Start with 01 and 02; the
 rest are reference material. Prefer one page? Open the
 [single-file gallery](docs/diagrams/index.html) (all six inlined, works offline).
+**Contributing?** That gallery is also the developer reference: developer notes
+under each diagram, plus commands, module map, config keys, the v2 result
+schema, S1–S9 SLOs, artifacts, the web API, the language-benchmark contract,
+extension seams, invariants and a glossary.
 
 | # | Diagram | Question it answers |
 |---|---|---|

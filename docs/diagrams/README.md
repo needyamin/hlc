@@ -21,7 +21,12 @@ GitHub, in an IDE preview, in a browser and in print — online or offline.
 
 **[index.html](index.html)** is a generated single-file gallery with all six
 SVGs inlined — open it locally for one printable page with zero network
-requests.
+requests. It is also the **developer reference**: each diagram is followed by
+concrete developer notes (which module owns the behaviour, the functions to
+call, the failure modes), and the page ends with a lookup sheet covering
+commands, the module map, config keys, the v2 result document, S1–S9 SLOs,
+per-run artifacts, the web API, the language-benchmark contract, extension
+seams, invariants/gotchas and a glossary. Start there when contributing.
 
 Legend used throughout: **solid box** = always on, **dashed box** = optional /
 best effort, **blue** = HTTP path, **violet** = Docker / instrumentation read
@@ -101,6 +106,14 @@ Mermaid CLI, no network. Each `d0N()` function is one diagram; `Canvas` provides
 `box()`, `lane()`, `note()`, `chip()`, `arrow()`, `diamond()` and `legend()`.
 Colours are inline (`PAL` dict), light theme with dark ink, so GitHub's SVG
 sanitiser cannot strip the styling.
+
+The gallery prose lives in the data tables near the bottom of `generate.py`
+(`INDEX` developer notes, `COMMANDS`, `MODULES`, `CONFIG_KEYS`, `RESULT_FIELDS`,
+`SLOS`, `ARTIFACTS`, `API`, `WORKLOADS`, `SEAMS`, `INVARIANTS`, `GLOSSARY`) —
+edit those, not `index.html`. `namespace_svg()` suffixes every id when the six
+SVGs are inlined, so marker/`aria-labelledby` references stay valid in one
+document. `fmt()` escapes text and turns `` `inline code` `` into `<code>`;
+never inject raw HTML into those strings.
 
 When the code changes, keep the diagrams in sync. Source of truth per diagram:
 
