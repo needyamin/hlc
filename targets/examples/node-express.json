@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "site_id": "node-express-hello",
+  "group": "hello-json",
+  "language": "node",
+  "runtime_version": "22",
+  "framework": "express",
+  "framework_version": "4.21",
+  "image": "hlc/node-express-hello:latest",
+  "image_digest": "",
+  "build_cmd": "docker build -t hlc/node-express-hello:latest ./apps/node-express",
+  "start_cmd": "node server.js",
+  "container": "hlc-node-express",
+  "host_port": 8090,
+  "health_path": "/health",
+  "routes": [
+    {"path": "/", "weight": 60, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/health", "weight": 40, "method": "GET", "expected_status": 200, "expected_payload_sha": ""}
+  ],
+  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "2-3", "mem_limit_mb": 512},
+  "warmup": {"duration_s": 10, "requests": 1000},
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 15,
+  "seed_workload": {"seed": 7919, "paths_file": ""},
+  "adapter": {"type": "node_v8", "endpoint": "/__hlc/runtime"}
+}

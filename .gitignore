@@ -1,0 +1,20 @@
+# Byte-code caches
+__pycache__/
+*.py[cod]
+
+# Generated benchmark output (recreated by runner.py)
+runs/*
+!runs/.gitkeep
+
+# Reversible archive of legacy sources and past runs
+_archive/
+
+# Local environment / logs
+*.log
+.env
+.venv/
+venv/
+.workbuddy-ai/
+
+# Local preview / scratch
+ui_preview.png

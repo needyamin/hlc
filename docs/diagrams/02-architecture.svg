@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="840" viewBox="0 0 1200 840" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">02 - Module architecture</title>
+<desc id="dsc">Three entry points, one orchestrator, pluggable collectors, one immutable result document.</desc>
+<defs>
+<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+</defs>
+<rect width="1200" height="840" fill="#ffffff"/>
+<text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">02 - Module architecture</text>
+<text x="36" y="67" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5b6b7d">Three entry points, one orchestrator, pluggable collectors, one immutable result document.</text>
+<line x1="36" y1="84" x2="1164" y2="84" stroke="#d8e1ec" stroke-width="1.5"/>
+<rect x="60" y="106" width="240" height="54" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="180.0" y="129.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#12336b" text-anchor="middle">cli.py</text>
+<text x="180.0" y="145.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">headless runs + campaign / compare</text>
+<rect x="330" y="106" width="240" height="54" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="450.0" y="129.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#12336b" text-anchor="middle">server.py</text>
+<text x="450.0" y="145.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">HTTP API + static web UI</text>
+<rect x="600" y="106" width="240" height="54" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="720.0" y="129.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#12336b" text-anchor="middle">selftest.py</text>
+<text x="720.0" y="145.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">end-to-end regression</text>
+<rect x="870" y="106" width="294" height="54" rx="8" fill="#eff3f8" stroke="#7a8899" stroke-width="1.1"/>
+<rect x="870" y="106" width="4" height="54" rx="2" fill="#7a8899" stroke="#7a8899" stroke-width="0"/>
+<text x="884" y="128" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="start">All three converge on the SAME runner.</text>
+<rect x="330" y="190" width="510" height="62" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="585.0" y="218.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#0b5c53" text-anchor="middle">heavyload/runner.run_benchmark()</text>
+<text x="585.0" y="234.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">preflight (6 checks) - resolve container - create run dir - orchestrate</text>
+<polyline points="585.0,252.0 585.0,272.0 180.0,272.0 180.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="585.0,252.0 585.0,272.0 450.0,272.0 450.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="585.0,252.0 585.0,272.0 720.0,272.0 720.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="585.0,252.0 585.0,272.0 990.0,272.0 990.0,292.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="180.0,160.0 180.0,176.0 585.0,176.0 585.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="450.0,160.0 450.0,190.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="720.0,160.0 720.0,176.0 585.0,176.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="60" y="292" width="240" height="72" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="180.0" y="324.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0b5c53" text-anchor="middle">engine.Benchmark</text>
+<text x="180.0" y="340.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">worker pool - 8 phases - guardrails</text>
+<rect x="330" y="292" width="240" height="72" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="450.0" y="324.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0b5c53" text-anchor="middle">samplers.SamplerSet</text>
+<text x="450.0" y="340.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">thread orchestration + snapshots</text>
+<rect x="600" y="292" width="240" height="72" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="720.0" y="324.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">adapters/*</text>
+<text x="720.0" y="340.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">per-language runtime metrics (optional)</text>
+<rect x="870" y="292" width="294" height="72" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="1017.0" y="324.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">browser/cdp.py</text>
+<text x="1017.0" y="340.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">headless Chrome page metrics (optional)</text>
+<rect x="60" y="392" width="240" height="60" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="180.0" y="418.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#12336b" text-anchor="middle">raw.jsonl</text>
+<text x="180.0" y="434.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">one JSON line per request</text>
+<rect x="330" y="392" width="240" height="60" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="450.0" y="418.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#432a91" text-anchor="middle">collectors/</text>
+<text x="450.0" y="433.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">cgroup - procfs - docker_stats - health - mysql</text>
+<rect x="600" y="392" width="564" height="60" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6" stroke-dasharray="6 4"/>
+<text x="882.0" y="418.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">series.runtime_series / series.browser_series</text>
+<text x="882.0" y="434.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">attached only when the optional adapter / browser is available</text>
+<polyline points="180.0,364.0 180.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="450.0,364.0 450.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="882.0,364.0 882.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="720.0,364.0 720.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<polyline points="1017.0,364.0 1017.0,392.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<rect x="60" y="480" width="1104" height="54" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="612.0" y="511.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#0b5c53" text-anchor="middle">results{}  -  metrics.http + metrics.resources + series  (assembled by engine.run())</text>
+<polyline points="180.0,452.0 180.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="450.0,452.0 450.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="882.0,452.0 882.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<polyline points="1017.0,452.0 1017.0,480.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)" stroke-dasharray="7 5"/>
+<rect x="60" y="562" width="340" height="64" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
+<text x="230.0" y="590.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#7c4a05" text-anchor="middle">grading.grade()  S1-S9</text>
+<text x="230.0" y="606.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">findings - health score 0-100 - GO / NO-GO</text>
+<rect x="430" y="562" width="340" height="64" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="600.0" y="590.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">schema.ensure_current()</text>
+<text x="600.0" y="606.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">v2 schema - additive v1 migration - visibility</text>
+<rect x="800" y="562" width="364" height="64" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="982.0" y="590.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">runtime_comparison.run()</text>
+<text x="982.0" y="606.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">cross-language compute (runs AFTER the HTTP schedule)</text>
+<polyline points="210.0,534.0 210.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="600.0,534.0 600.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="982.0,534.0 982.0,562.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="60" y="654" width="340" height="60" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="230.0" y="680.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">report.build() -&gt; report.html</text>
+<text x="230.0" y="696.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">self-contained: inline SVG, no JS / CDN</text>
+<rect x="430" y="654" width="340" height="60" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="600.0" y="680.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">results.json + stage2_verdict.json</text>
+<text x="600.0" y="696.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ status.json for live UI KPIs</text>
+<rect x="800" y="654" width="364" height="60" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="982.0" y="680.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#0d5427" text-anchor="middle">runtime_comparison.json / .html + sources/</text>
+<text x="982.0" y="696.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">also linked from report.html section 11</text>
+<polyline points="230.0,626.0 230.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="600.0,626.0 600.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<polyline points="982.0,626.0 982.0,654.0" fill="none" stroke="#7a8899" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="60" y="732" width="1104" height="48" rx="8" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.1"/>
+<rect x="60" y="732" width="4" height="48" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+<text x="74" y="755" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="start">Live UI path</text>
+<text x="74" y="772" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="start">server.py serves these artifacts from /runs/&lt;id&gt;/&lt;file&gt; (SAFE_ARTIFACTS whitelist); ui/app.js polls /api/status and /api/log at 1 Hz.</text>
+<line x1="36" y1="796" x2="1164" y2="796" stroke="#d8e1ec" stroke-width="1"/>
+<text x="36" y="816" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/runner.py, engine.py, grading.py, schema/, report.py, paths.py, runtime_comparison.py, server.py</text>
+</svg>

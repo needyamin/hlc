@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">05 - Benchmark modes and the comparability gate</title>
+<desc id="dsc">Which mode you get depends on what you control - and only one mode may be ranked against another run.</desc>
+<defs>
+<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+</defs>
+<rect width="1200" height="760" fill="#ffffff"/>
+<text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">05 - Benchmark modes and the comparability gate</text>
+<text x="36" y="67" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5b6b7d">Which mode you get depends on what you control - and only one mode may be ranked against another run.</text>
+<line x1="36" y1="84" x2="1164" y2="84" stroke="#d8e1ec" stroke-width="1.5"/>
+<text x="60" y="110" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="700" fill="#5b6b7d" text-anchor="start">PICK THE MODE FROM THE VANTAGE POINT YOU ACTUALLY HAVE</text>
+<rect x="60" y="126" width="340" height="34" rx="17.0" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.2"/>
+<text x="230.0" y="146.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">Docker container you control</text>
+<rect x="430" y="126" width="340" height="34" rx="17.0" fill="#fff2dc" stroke="#c07a12" stroke-width="1.2"/>
+<text x="600.0" y="146.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">You own the server, no container</text>
+<rect x="800" y="126" width="364" height="34" rx="17.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
+<text x="982.0" y="146.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="middle">Public site / no server access</text>
+<rect x="60" y="180" width="340" height="46" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="230.0" y="207.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#0b5c53" text-anchor="middle">docker_lab</text>
+<text x="72" y="246" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">visibility: full_server</text>
+<rect x="60" y="256" width="340" height="168" rx="8" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1.2"/>
+<text x="72" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0f8a7a" text-anchor="start">-</text>
+<text x="86" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">HTTP latency, status, errors, RPS, bytes</text>
+<text x="72" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0f8a7a" text-anchor="start">-</text>
+<text x="86" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">cgroup v2 anon / peak / cpu.stat / io.stat</text>
+<text x="72" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0f8a7a" text-anchor="start">-</text>
+<text x="86" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">per-process RSS, threads, OOM kills, restarts</text>
+<text x="72" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0f8a7a" text-anchor="start">-</text>
+<text x="86" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">optional runtime internals + browser CDP</text>
+<text x="72" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0f8a7a" text-anchor="start">-</text>
+<text x="86" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">pinned --cpus / --memory / --cpuset-cpus</text>
+<rect x="60" y="436" width="340" height="32" rx="16.0" fill="#e6f6ea" stroke="#18803d" stroke-width="1.2"/>
+<text x="230.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0d5427" text-anchor="middle">COMPARABLE</text>
+<polyline points="230.0,160.0 230.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="430" y="180" width="340" height="46" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
+<text x="600.0" y="207.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#7c4a05" text-anchor="middle">instrumented_live</text>
+<text x="442" y="246" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="start">visibility: server_via_adapter</text>
+<rect x="430" y="256" width="340" height="168" rx="8" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1.2"/>
+<text x="442" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c07a12" text-anchor="start">-</text>
+<text x="456" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">HTTP client metrics (as above)</text>
+<text x="442" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c07a12" text-anchor="start">-</text>
+<text x="456" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">Prometheus / cAdvisor / APM metrics</text>
+<text x="442" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c07a12" text-anchor="start">-</text>
+<text x="456" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">collected via a future Collector adapter</text>
+<text x="442" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c07a12" text-anchor="start">-</text>
+<text x="456" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">no cgroup files without a container</text>
+<text x="442" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c07a12" text-anchor="start">-</text>
+<text x="456" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">NOT BUILT IN THIS ROUND</text>
+<rect x="430" y="436" width="340" height="32" rx="16.0" fill="#fff2dc" stroke="#c07a12" stroke-width="1.2"/>
+<text x="600.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">FUTURE ADAPTER</text>
+<polyline points="600.0,160.0 600.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="800" y="180" width="364" height="46" rx="10" fill="#fdeaea" stroke="#c0392b" stroke-width="1.6"/>
+<text x="982.0" y="207.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#822018" text-anchor="middle">live_blackbox</text>
+<text x="812" y="246" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="start">visibility: client_only</text>
+<rect x="800" y="256" width="364" height="168" rx="8" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1.2"/>
+<text x="812" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c0392b" text-anchor="start">-</text>
+<text x="826" y="276" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">HTTP latency, status, errors, RPS, bytes</text>
+<text x="812" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c0392b" text-anchor="start">-</text>
+<text x="826" y="306" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">optional browser FCP / LCP / JS heap</text>
+<text x="812" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c0392b" text-anchor="start">-</text>
+<text x="826" y="336" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">resources.* -&gt; unavailable</text>
+<text x="812" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c0392b" text-anchor="start">-</text>
+<text x="826" y="366" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#16202c" text-anchor="start">series.cgroup_series -&gt; unavailable</text>
+<text x="812" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#c0392b" text-anchor="start">-</text>
+<text x="826" y="396" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">never infer server CPU / RAM from latency</text>
+<rect x="800" y="436" width="364" height="32" rx="16.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
+<text x="982.0" y="455.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="middle">NOT COMPARABLE</text>
+<polyline points="982.0,160.0 982.0,180.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<text x="60" y="506" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">schema.can_compare(a, b)  -  HARD RULE, ENFORCED BEFORE ANY LEADERBOARD</text>
+<rect x="60" y="522" width="540" height="116" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="330.0" y="568.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">ALL of these must hold</text>
+<text x="330.0" y="584.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="middle">same benchmark_mode  +  same visibility  +  same schema_version</text>
+<text x="330.0" y="600.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="middle">same workload_class  +  visibility != client_only</text>
+<polyline points="600.0,580.0 650.0,580.0" fill="none" stroke="#7a8899" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="650" y="522" width="250" height="52" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="775.0" y="552.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">FAIR COMPARISON</text>
+<rect x="920" y="522" width="244" height="52" rx="10" fill="#fdeaea" stroke="#c0392b" stroke-width="1.6"/>
+<text x="1042.0" y="552.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#822018" text-anchor="middle">NOT COMPARABLE</text>
+<rect x="980" y="484" width="164" height="24" rx="12.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
+<text x="1062.0" y="499.4" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="700" fill="#822018" text-anchor="middle">any rule fails</text>
+<polyline points="1062.0,508.0 1062.0,522.0" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_red)" stroke-dasharray="7 5"/>
+<rect x="650" y="590" width="514" height="48" rx="8" fill="#fff2dc" stroke="#c07a12" stroke-width="1.1"/>
+<rect x="650" y="590" width="4" height="48" rx="2" fill="#c07a12" stroke="#c07a12" stroke-width="0"/>
+<text x="664" y="612" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Otherwise: comparable=False + a reason; no ranking, no winner, no misleading chart.</text>
+<rect x="60" y="644" width="1104" height="60" rx="8" fill="#eff3f8" stroke="#7a8899" stroke-width="1.1"/>
+<rect x="60" y="644" width="4" height="60" rx="2" fill="#7a8899" stroke="#7a8899" stroke-width="0"/>
+<text x="74" y="667" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#3f4c5c" text-anchor="start">Do not quote raw lab CPU% as absolute capacity</text>
+<text x="74" y="683.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">cgroup files live in the WSL2 Linux VM and are reached by docker exec; target, VM and generator share physical cores.</text>
+<text x="74" y="700.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Pin cores, subtract the idle baseline, and always keep environment.fingerprint.host_shared_cpu=true.</text>
+<line x1="36" y1="716" x2="1164" y2="716" stroke="#d8e1ec" stroke-width="1"/>
+<text x="36" y="736" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/schema/metrics.py (can_compare, VISIBILITY_LEVELS), compare.py, report_compare.py, config.py, docs/benchmark-modes.md</text>
+</svg>

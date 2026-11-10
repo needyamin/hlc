@@ -1,0 +1,177 @@
+{
+  "schema_version": 2,
+  "target_url": "http://localhost:8090/",
+  "container": "spid3rweb-app",
+  "mysql_container": "",
+  "mode": "auto",
+  "profile": "smoke",
+  "health_path": "/health",
+  "paths": [
+    {
+      "path": "/",
+      "weight": 1
+    },
+    {
+      "path": "/catalog",
+      "weight": 1
+    },
+    {
+      "path": "/health",
+      "weight": 1
+    }
+  ],
+  "headers": {},
+  "max_concurrency": 20,
+  "request_timeout_s": 12.0,
+  "keep_alive": true,
+  "sample_period_s": 1.0,
+  "stats_period_s": 4.0,
+  "cooldown_s": 60,
+  "reprobe_s": 15,
+  "phases": [
+    {
+      "name": "01-plateau",
+      "label": "Idle plateau (C=0)",
+      "duration_s": 3,
+      "probe_hz": 0.0,
+      "role": "idle",
+      "concurrency": 0
+    },
+    {
+      "name": "02-warmup",
+      "label": "Warm-up (C=2)",
+      "duration_s": 3,
+      "probe_hz": 1.0,
+      "role": "active",
+      "concurrency": 2
+    },
+    {
+      "name": "03-ramp",
+      "label": "Ramp 2-5-10",
+      "duration_s": 6,
+      "probe_hz": 1.0,
+      "role": "active",
+      "steps": [
+        2,
+        5,
+        10
+      ],
+      "concurrency": 10
+    },
+    {
+      "name": "04-sustained",
+      "label": "Sustained (C=10)",
+      "duration_s": 6,
+      "probe_hz": 1.0,
+      "role": "sustained",
+      "concurrency": 10
+    },
+    {
+      "name": "05-spike",
+      "label": "Spike (C=15-20)",
+      "duration_s": 3,
+      "probe_hz": 1.0,
+      "role": "spike",
+      "steps": [
+        15,
+        20
+      ],
+      "concurrency": 20
+    },
+    {
+      "name": "06-soak",
+      "label": "Short soak (C=5)",
+      "duration_s": 3,
+      "probe_hz": 1.0,
+      "role": "soak",
+      "concurrency": 5
+    },
+    {
+      "name": "07-zero-load",
+      "label": "Zero-load recovery (C=0)",
+      "duration_s": 6,
+      "probe_hz": 0.0,
+      "role": "cooldown",
+      "concurrency": 0
+    },
+    {
+      "name": "08-reprobe",
+      "label": "Availability re-probe",
+      "duration_s": 3,
+      "probe_hz": 1.0,
+      "role": "reprobe",
+      "concurrency": 0
+    }
+  ],
+  "benchmark_mode": "docker_lab",
+  "target": {
+    "site_id": "",
+    "group": "",
+    "language": "",
+    "runtime_version": "",
+    "framework": "",
+    "framework_version": "",
+    "image": "",
+    "image_digest": "",
+    "build_cmd": "",
+    "start_cmd": "",
+    "stack_label": ""
+  },
+  "targets": [],
+  "fairness": {
+    "warmup_s": 10,
+    "idle_baseline_s": 10,
+    "repeats": 3,
+    "seed": 7919,
+    "aggregate": "median",
+    "cooldown_between_repeats_s": 15,
+    "identical_workload": true,
+    "cpuset_target": "",
+    "cpuset_generator": "",
+    "pin_host_generator": true
+  },
+  "browser": {
+    "enabled": false,
+    "cdp_url": "http://127.0.0.1:9222"
+  },
+  "runtime_adapter": {
+    "type": "",
+    "endpoint": "/__hlc/runtime"
+  },
+  "runtime_comparison": {
+    "enabled": true,
+    "repeats": 2,
+    "container": "",
+    "include_container": true,
+    "include_native": true,
+    "include_references": true,
+    "write_sources": true,
+    "timeout_s": 300,
+    "workloads": [
+      "prime",
+      "json",
+      "map"
+    ]
+  },
+  "generator": {
+    "isolated": false
+  },
+  "guardrails": {
+    "max_anon_mib": 8192,
+    "consecutive_samples": 10,
+    "min_host_free_gb": 3,
+    "max_error_rate_pct": 50,
+    "max_consecutive_failures": 50
+  },
+  "slo": {
+    "max_error_pct": 0.1,
+    "max_p95_ms": 500,
+    "max_p99_ms": 2000,
+    "min_rps": 0,
+    "max_memory_growth_mib": 256,
+    "max_retained_pct": 120,
+    "min_health_success_pct": 99
+  },
+  "output_dir": "runs",
+  "notes": ""
+}

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heavy-Load Checker</title>
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">HL</div>
+    <div>
+      <h1>Heavy-Load Checker</h1>
+      <p>Config-driven load behavior analysis for any Dockerized website</p>
+    </div>
+  </div>
+  <div class="topmeta">
+    <span id="docker-pill" class="pill">checking Docker...</span>
+    <span id="state-pill" class="pill gray">idle</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ============================ LEFT: CONFIGURATION ==================== -->
+  <div class="col">
+    <section class="card">
+      <h2><span class="num">1</span> Target</h2>
+      <p class="hint">Enter the URL of any website. If it runs in Docker, the
+        container is auto-detected from the published port and cgroup memory is
+        instrumented.</p>
+      <label class="fld">
+        <span>Website URL</span>
+        <input id="url" type="text" spellcheck="false"
+               placeholder="http://localhost:8090/">
+      </label>
+      <div class="grid2">
+        <label class="fld">
+          <span>Docker container</span>
+          <select id="container"></select>
+        </label>
+        <label class="fld">
+          <span>MySQL container <em>(optional)</em></span>
+          <select id="mysql-container"></select>
+        </label>
+      </div>
+      <div class="grid2">
+        <label class="fld">
+          <span>Instrumentation mode</span>
+          <select id="mode">
+            <option value="auto">auto (detect Docker)</option>
+            <option value="docker">force Docker cgroup</option>
+            <option value="direct">direct HTTP only</option>
+          </select>
+        </label>
+        <label class="fld">
+          <span>Health probe path</span>
+          <input id="health-path" type="text" spellcheck="false" value="/health">
+        </label>
+      </div>
+      <div class="row">
+        <button id="btn-containers" class="btn ghost small">Refresh containers</button>
+        <button id="btn-preflight" class="btn ghost small">Run preflight check</button>
+      </div>
+      <div id="preflight-result" class="preflight"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">2</span> Workload</h2>
+      <p class="hint">GET routes and relative weights. Higher weight = more
+        requests to that route.</p>
+      <div id="path-rows" class="pathrows"></div>
+      <div class="row">
+        <button id="btn-add-path" class="btn ghost small">+ Add route</button>
+        <button id="btn-routes" class="btn ghost small">Discover routes on target</button>
+      </div>
+      <div id="routes-result" class="routes"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">3</span> Load profile</h2>
+      <p class="hint">Presets replace the phase schedule and concurrency ceiling.
+        Start with <strong>Smoke</strong> on an unknown target.</p>
+      <div id="presets" class="chips"></div>
+      <div id="schedule-preview" class="sched"></div>
+      <div class="grid2">
+        <label class="fld">
+          <span>Max concurrency (worker cap)</span>
+          <input id="max-concurrency" type="number" min="1" max="1000">
+        </label>
+        <label class="fld">
+          <span>Request timeout (s)</span>
+          <input id="request-timeout" type="number" min="1" max="120" step="1">
+        </label>
+      </div>
+      <label class="check"><input id="keep-alive" type="checkbox"> Use HTTP keep-alive connections</label>
+    </section>
+
+    <details class="card advanced">
+      <summary>Guardrails &amp; SLO thresholds <span class="muted">click to expand</span></summary>
+      <h3>Safety guardrails <span class="muted">(stop the run, not an SLO)</span></h3>
+      <div class="grid3">
+        <label class="fld"><span>Max cgroup anon (MiB)</span><input id="max-anon" type="number" min="64"></label>
+        <label class="fld"><span>Consecutive samples</span><input id="consecutive-samples" type="number" min="1"></label>
+        <label class="fld"><span>Min host free RAM (GB)</span><input id="min-free" type="number" min="0" step="0.5"></label>
+        <label class="fld"><span>Max error rate (%)</span><input id="max-error-rate" type="number" min="1" step="1"></label>
+        <label class="fld"><span>Max consecutive failures</span><input id="max-consecutive-failures" type="number" min="1"></label>
+        <label class="fld"><span>Post-abort cooldown (s)</span><input id="cooldown-s" type="number" min="0"></label>
+        <label class="fld"><span>Post-abort re-probe (s)</span><input id="reprobe-s" type="number" min="0"></label>
+      </div>
+      <h3>SLO thresholds <span class="muted">(graded in the report)</span></h3>
+      <div class="grid3">
+        <label class="fld"><span>Max error rate (%)</span><input id="slo-error" type="number" step="0.01"></label>
+        <label class="fld"><span>Max p95 (ms)</span><input id="slo-p95" type="number" step="1"></label>
+        <label class="fld"><span>Max p99 (ms)</span><input id="slo-p99" type="number" step="1"></label>
+        <label class="fld"><span>Min RPS (0 = informational)</span><input id="slo-rps" type="number" step="1"></label>
+        <label class="fld"><span>Max active mem growth (MiB)</span><input id="slo-growth" type="number" step="1"></label>
+        <label class="fld"><span>Max cooldown retained (%)</span><input id="slo-retained" type="number" step="1"></label>
+        <label class="fld"><span>Min health success (%)</span><input id="slo-health" type="number" step="0.1"></label>
+      </div>
+      <div class="note">Guardrails are safety limits. An abort is treated as
+        NO-GO and right-censors every schedule-dependent SLO.</div>
+    </details>
+  </div>
+
+  <!-- ============================ RIGHT: RUN CONTROL ===================== -->
+  <div class="col">
+    <section class="card runcard">
+      <h2><span class="num">4</span> Run benchmark</h2>
+      <div class="row buttons">
+        <button id="btn-start" class="btn primary">Start benchmark</button>
+        <button id="btn-stop" class="btn danger" disabled>Stop</button>
+      </div>
+      <div class="progressline">
+        <div id="progress-bar" class="progressbar"></div>
+      </div>
+      <div class="runmeta">
+        <span id="run-phase">No run in progress</span>
+        <span id="run-time">0 / 0 s</span>
+      </div>
+      <div id="live-kpis" class="kpis"></div>
+      <div class="sparkwrap">
+        <div class="sparklabel">Live throughput (requests / s)</div>
+        <svg id="spark" viewBox="0 0 600 110" preserveAspectRatio="none"></svg>
+      </div>
+      <div id="verdict-box" class="verdict"></div>
+      <div id="report-link" class="reportlink"></div>
+    </section>
+
+    <section class="card">
+      <h2>Console</h2>
+      <div id="log" class="log"></div>
+    </section>
+
+    <section class="card">
+      <h2>Campaigns <span class="muted">(multi-language)</span></h2>
+      <p class="hint">Run the <strong>same workload</strong> across several sites
+        (one <code>targets/*.json</code> spec each), each repeated and aggregated,
+        then get an honest side-by-side leaderboard. See
+        <code>benchmarks/lang-runtime.json</code> for the template.</p>
+      <label class="fld">
+        <span>Campaign file (relative to project)</span>
+        <input id="campaign-path" type="text" spellcheck="false"
+               value="benchmarks/lang-runtime.json">
+      </label>
+      <div class="row buttons">
+        <button id="btn-campaign-start" class="btn primary">Start campaign</button>
+        <button id="btn-campaign-stop" class="btn danger" disabled>Stop</button>
+      </div>
+      <div id="campaign-progress" class="runmeta"></div>
+      <div id="campaigns" class="reports"></div>
+    </section>
+
+    <section class="card">
+      <h2>Past runs <button id="btn-refresh-reports" class="btn ghost tiny">Refresh</button></h2>
+      <div class="row comparebar">
+        <button id="btn-compare" class="btn ghost small">Compare selected</button>
+        <button id="btn-export-csv" class="btn ghost small">Export CSV</button>
+        <span id="compare-count" class="muted"></span>
+      </div>
+      <div id="reports" class="reports"></div>
+    </section>
+
+    <section class="card help">
+      <h2>What gets measured</h2>
+      <ul>
+        <li><strong>HTTP:</strong> throughput, p50/p95/p99, error taxonomy, per-route and per-phase breakdown.</li>
+        <li><strong>Container:</strong> cgroup v2 <code>memory.stat anon</code> in raw bytes, <code>memory.current</code>, CPU from <code>cpu.stat</code>, PSI, OOM kills, PIDs, restarts.</li>
+        <li><strong>Recovery:</strong> a zero-load cooldown and a 1 Hz availability re-probe separate a retained allocator high-water mark from a true unbounded leak.</li>
+        <li><strong>Deliverable:</strong> a single-file HTML report with inline SVG charts, no JavaScript, no CDN.</li>
+      </ul>
+      <p class="hint">The tool never changes container configuration, memory
+        limits, or application code. It only sends GET requests and reads
+        cgroup counters. Always use a non-production target first.</p>
+    </section>
+  </div>
+</div>
+
+<footer>Heavy-Load Checker 1.0 &middot; Python standard library only &middot;
+  bound to localhost</footer>
+
+<script src="/ui/app.js"></script>
+</body>
+</html>

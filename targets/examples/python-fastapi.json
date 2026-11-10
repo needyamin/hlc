@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "site_id": "python-fastapi-hello",
+  "group": "hello-json",
+  "language": "python",
+  "runtime_version": "3.13",
+  "framework": "fastapi",
+  "framework_version": "0.115",
+  "image": "hlc/python-fastapi-hello:latest",
+  "image_digest": "",
+  "build_cmd": "docker build -t hlc/python-fastapi-hello:latest ./apps/python-fastapi",
+  "start_cmd": "uvicorn app:app --host 0.0.0.0 --port 8090 --workers 1",
+  "container": "hlc-python-fastapi",
+  "host_port": 8090,
+  "health_path": "/health",
+  "routes": [
+    {"path": "/", "weight": 60, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/health", "weight": 40, "method": "GET", "expected_status": 200, "expected_payload_sha": ""}
+  ],
+  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "2-3", "mem_limit_mb": 512},
+  "warmup": {"duration_s": 10, "requests": 1000},
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 15,
+  "seed_workload": {"seed": 7919, "paths_file": ""},
+  "adapter": {"type": "python_gc", "endpoint": "/__hlc/runtime"}
+}

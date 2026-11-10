@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "title": "Language runtime load comparison — hello-json",
+  "profile": "smoke",
+  "warmup_runs": 1,
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 5,
+  "fairness": {
+    "identical_workload": true,
+    "seed": 7919,
+    "aggregate": "median"
+  },
+  "sites": [
+    "python-fastapi-hello",
+    "node-express-hello"
+  ],
+  "notes": "Compares a Python/FastAPI and a Node/Express hello-JSON site under one identical workload. Each site runs warmup_runs (discarded) + repeat_count measured passes; the campaign reports the median across repeats. IMPORTANT: runs are only comparable when every site is measured in docker_lab mode (server CPU/RAM visible). Client-only / live_blackbox runs are flagged not-comparable and never contribute a misleading ranking. Build and start each target with `python scripts/lab_up.py <site-id> --build --apply` before running the campaign."
+}

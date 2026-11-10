@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Heavy Load Checker target spec (v2)",
+  "description": "One website/runtime to benchmark. Phase 2 campaigns reference N of these. Validated by heavyload.targetspec.validate().",
+  "type": "object",
+  "required": ["site_id", "language", "image", "health_path", "routes"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 2},
+    "site_id": {"type": "string", "minLength": 1, "description": "Stable id used to group runs across repeats"},
+    "group": {"type": "string", "description": "Optional comparison group, e.g. hello-world-json"},
+    "language": {"type": "string", "enum": ["python", "node", "go", "java", "dotnet", "php", "rust", "ruby"]},
+    "runtime_version": {"type": "string", "description": "e.g. 3.13.1, 22.14, 1.23"},
+    "framework": {"type": "string", "description": "e.g. fastapi, express, gin, spring-boot"},
+    "framework_version": {"type": "string"},
+    "image": {"type": "string", "description": "Docker image reference"},
+    "image_digest": {"type": "string", "description": "sha256:... recorded in the result fingerprint"},
+    "build_cmd": {"type": "string"},
+    "start_cmd": {"type": "string"},
+    "container": {"type": "string", "description": "Container name; defaults to site_id"},
+    "host_port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 8090},
+    "health_path": {"type": "string", "default": "/health"},
+    "routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^/"},
+          "weight": {"type": "integer", "minimum": 1, "default": 100},
+          "method": {"type": "string", "default": "GET"},
+          "expected_status": {"type": "integer", "default": 200},
+          "expected_payload_sha": {"type": "string", "description": "Ensures every language serves an identical response"}
+        }
+      }
+    },
+    "resource_limits": {
+      "type": "object",
+      "properties": {
+        "cpus": {"type": "number", "minimum": 0.1, "default": 1.0},
+        "cpuset_cpus": {"type": "string", "description": "e.g. 2-3; pin the target away from the load generator"},
+        "mem_limit_mb": {"type": "integer", "minimum": 64, "default": 512}
+      }
+    },
+    "warmup": {
+      "type": "object",
+      "properties": {
+        "duration_s": {"type": "integer", "default": 10},
+        "requests": {"type": "integer", "default": 1000}
+      }
+    },
+    "repeat_count": {"type": "integer", "minimum": 1, "maximum": 20, "default": 3},
+    "cooldown_between_repeats_s": {"type": "integer", "default": 15},
+    "seed_workload": {
+      "type": "object",
+      "properties": {
+        "seed": {"type": "integer", "default": 7919},
+        "paths_file": {"type": "string"}
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "description": "Runtime-internals source. The app should expose this endpoint as JSON.",
+      "properties": {
+        "type": {"type": "string", "enum": ["", "python_gc", "node_v8", "jvm", "go", "phpfpm", "dotnet"]},
+        "endpoint": {"type": "string", "default": "/__hlc/runtime"}
+      }
+    }
+  }
+}

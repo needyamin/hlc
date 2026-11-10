@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">03 - One run, start to finish</title>
+<desc id="dsc">The eight orchestration steps (top) and the eight HTTP phases of the smoke profile (bottom).</desc>
+<defs>
+<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+</defs>
+<rect width="1200" height="780" fill="#ffffff"/>
+<text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">03 - One run, start to finish</text>
+<text x="36" y="67" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5b6b7d">The eight orchestration steps (top) and the eight HTTP phases of the smoke profile (bottom).</text>
+<line x1="36" y1="84" x2="1164" y2="84" stroke="#d8e1ec" stroke-width="1.5"/>
+<rect x="60.0" y="112" width="126" height="104" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="123.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="middle">1  Preflight</text>
+<text x="123.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">6 read-only checks:</text>
+<text x="123.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">URL, health, Docker,</text>
+<text x="123.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">container, cgroup, RAM</text>
+<rect x="199.5" y="112" width="126" height="104" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="262.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="middle">2  Set up run</text>
+<text x="262.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runs/run-&lt;stamp&gt;/</text>
+<text x="262.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">write config.json</text>
+<text x="262.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ preflight.json</text>
+<polyline points="186.0,164.0 199.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="339.0" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="402.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">3  Instrument</text>
+<text x="402.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">start sampler threads</text>
+<text x="402.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ in-container</text>
+<text x="402.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">collector process</text>
+<polyline points="325.5,164.0 339.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="478.5" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="541.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">4  Drive load</text>
+<text x="541.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">8 phases, guardrails,</text>
+<text x="541.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">per-request raw.jsonl</text>
+<text x="541.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ health probes</text>
+<polyline points="465.0,164.0 478.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="618.0" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="681.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">5  Aggregate</text>
+<text x="681.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">stop workers,</text>
+<text x="681.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">latency percentiles,</text>
+<text x="681.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">resource series</text>
+<polyline points="604.5,164.0 618.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="757.5" y="112" width="126" height="104" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
+<text x="820.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">6  Adjudicate</text>
+<text x="820.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">grade S1-S9,</text>
+<text x="820.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">schema v2 normalize,</text>
+<text x="820.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">verdict + score</text>
+<polyline points="744.0,164.0 757.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="897.0" y="112" width="126" height="104" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="960.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#432a91" text-anchor="middle">7  Compare</text>
+<text x="960.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runtime_comparison</text>
+<text x="960.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">(FAILURE-SAFE, after</text>
+<text x="960.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">the HTTP result)</text>
+<polyline points="883.5,164.0 897.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<rect x="1036.5" y="112" width="126" height="104" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="1099.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0d5427" text-anchor="middle">8  Publish</text>
+<text x="1099.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">results.json,</text>
+<text x="1099.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">report.html, status.json</text>
+<text x="1099.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ comparison files</text>
+<polyline points="1023.0,164.0 1036.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
+<text x="60" y="254" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">SMOKE PROFILE  -  8 phases, ~33 s total, peak C=20 (quick ~3.5 min / standard ~24 min share the same shape)</text>
+<rect x="60.0" y="276" width="96.36363636363636" height="66" rx="7" fill="#eff3f8" stroke="#7a8899" stroke-width="1.4"/>
+<text x="108.18181818181819" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">01 plateau</text>
+<text x="108.18181818181819" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=0</text>
+<text x="108.18181818181819" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
+<text x="108.18181818181819" y="358" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#7c4a05" text-anchor="middle">idle baseline</text>
+<rect x="160.36363636363637" y="276" width="96.36363636363636" height="66" rx="7" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.4"/>
+<text x="208.54545454545456" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#12336b" text-anchor="middle">02 warmup</text>
+<text x="208.54545454545456" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=2</text>
+<text x="208.54545454545456" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
+<rect x="260.72727272727275" y="276" width="196.72727272727272" height="66" rx="7" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.4"/>
+<text x="359.0909090909091" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#12336b" text-anchor="middle">03 ramp</text>
+<text x="359.0909090909091" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">2-5-10</text>
+<text x="359.0909090909091" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">6s</text>
+<rect x="461.4545454545455" y="276" width="196.72727272727272" height="66" rx="7" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.4"/>
+<text x="559.8181818181819" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#0b5c53" text-anchor="middle">04 sustained</text>
+<text x="559.8181818181819" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=10</text>
+<text x="559.8181818181819" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">6s</text>
+<text x="559.8181818181819" y="358" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#7c4a05" text-anchor="middle">S4</text>
+<rect x="662.1818181818182" y="276" width="96.36363636363636" height="66" rx="7" fill="#fff2dc" stroke="#c07a12" stroke-width="1.4"/>
+<text x="710.3636363636364" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#7c4a05" text-anchor="middle">05 spike</text>
+<text x="710.3636363636364" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">15-20</text>
+<text x="710.3636363636364" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
+<rect x="762.5454545454546" y="276" width="96.36363636363636" height="66" rx="7" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.4"/>
+<text x="810.7272727272727" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#0b5c53" text-anchor="middle">06 soak</text>
+<text x="810.7272727272727" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=5</text>
+<text x="810.7272727272727" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
+<rect x="862.909090909091" y="276" width="196.72727272727272" height="66" rx="7" fill="#eff3f8" stroke="#7a8899" stroke-width="1.4"/>
+<text x="961.2727272727274" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">07 zero-load</text>
+<text x="961.2727272727274" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=0</text>
+<text x="961.2727272727274" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">6s</text>
+<text x="961.2727272727274" y="358" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#7c4a05" text-anchor="middle">S6 cooldown</text>
+<rect x="1063.6363636363637" y="276" width="96.36363636363636" height="66" rx="7" fill="#e6f6ea" stroke="#18803d" stroke-width="1.4"/>
+<text x="1111.818181818182" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#0d5427" text-anchor="middle">08 reprobe</text>
+<text x="1111.818181818182" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=0</text>
+<text x="1111.818181818182" y="332" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">3s</text>
+<text x="1111.818181818182" y="358" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#7c4a05" text-anchor="middle">S7 availability</text>
+<polyline points="60,268 1164,268" fill="none" stroke="#7a8899" stroke-width="1.5" marker-end="url(#ar_gray)"/>
+<text x="60" y="392" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">time  -&gt;</text>
+<rect x="60" y="412" width="540" height="66" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
+<text x="330.0" y="441.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#7c4a05" text-anchor="middle">Guardrails can abort early</text>
+<text x="330.0" y="457.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">error-rate ceiling, OOM / restart, host free-RAM floor -&gt; partial results are still written</text>
+<rect x="620" y="412" width="544" height="66" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
+<text x="892.0" y="441.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">Step 7 cannot lose step 4</text>
+<text x="892.0" y="457.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">comparison runs AFTER aggregation + grading; any exception becomes a warning in results.json</text>
+<text x="60" y="512" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">WHY THE PHASES EXIST</text>
+<rect x="60" y="526" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="72" y="545" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">01 idle</text>
+<text x="72" y="562" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">capture baseline CPU / anon memory so net values can be derived</text>
+<rect x="630" y="526" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="642" y="545" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">02-03</text>
+<text x="642" y="562" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">warm the target, then step concurrency up instead of hammering cold</text>
+<rect x="60" y="584" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="72" y="603" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">04 sustained</text>
+<text x="72" y="620" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">the only phase used for the throughput SLO (S4)</text>
+<rect x="630" y="584" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="642" y="603" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">05 spike</text>
+<text x="642" y="620" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">short burst to expose queueing and tail-latency blow-ups</text>
+<rect x="60" y="642" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="72" y="661" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">07 cooldown</text>
+<text x="72" y="678" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">zero load; S6 checks memory is actually released</text>
+<rect x="630" y="642" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
+<text x="642" y="661" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">08 reprobe</text>
+<text x="642" y="678" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">S7 confirms the target still answers after the whole schedule</text>
+<line x1="36" y1="736" x2="1164" y2="736" stroke="#d8e1ec" stroke-width="1"/>
+<text x="36" y="756" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/config.py (preset_phases), engine.py (_run_phase / _guard_check), runner.py (run_benchmark), grading.py (S1-S9)</text>
+</svg>

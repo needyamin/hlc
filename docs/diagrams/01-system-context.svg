@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">01 - System context</title>
+<desc id="dsc">Where every number comes from - and the one boundary an external client cannot cross.</desc>
+<defs>
+<marker id="ar_blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
+<marker id="ar_teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0f8a7a"/></marker>
+<marker id="ar_violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6d4bd8"/></marker>
+<marker id="ar_amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c07a12"/></marker>
+<marker id="ar_green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#18803d"/></marker>
+<marker id="ar_red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+<marker id="ar_gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a8899"/></marker>
+<marker id="ar_ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b7d"/></marker>
+</defs>
+<rect width="1200" height="700" fill="#ffffff"/>
+<text x="36" y="42" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#16202c">01 - System context</text>
+<text x="36" y="67" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="13" fill="#5b6b7d">Where every number comes from - and the one boundary an external client cannot cross.</text>
+<line x1="36" y1="84" x2="1164" y2="84" stroke="#d8e1ec" stroke-width="1.5"/>
+<rect x="36" y="104" width="520" height="486" rx="12" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1.3"/>
+<path d="M36,136 L36,116 Q36,104 48,104 L544,104 Q556,104 556,116 L556,136 Z" fill="#eff3f8"/>
+<line x1="36" y1="136" x2="556" y2="136" stroke="#7a8899" stroke-width="1"/>
+<text x="50" y="125" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="700" fill="#3f4c5c" text-anchor="start">WINDOWS HOST  |  stdlib Python 3.10+  |  your machine</text>
+<rect x="644" y="104" width="520" height="486" rx="12" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1.3"/>
+<path d="M644,136 L644,116 Q644,104 656,104 L1152,104 Q1164,104 1164,116 L1164,136 Z" fill="#f0ebff"/>
+<line x1="644" y1="136" x2="1164" y2="136" stroke="#6d4bd8" stroke-width="1"/>
+<text x="658" y="125" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11.5" font-weight="700" fill="#432a91" text-anchor="start">DOCKER DESKTOP / WSL2 LINUX VM  |  containers you control</text>
+<rect x="60" y="150" width="270" height="50" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="195.0" y="171.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#12336b" text-anchor="middle">cli.py  -  headless</text>
+<text x="195.0" y="187.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">one run -&gt; runs/&lt;run-id&gt;/ artifacts</text>
+<rect x="60" y="212" width="270" height="50" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
+<text x="195.0" y="233.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#12336b" text-anchor="middle">server.py + ui/app.js</text>
+<text x="195.0" y="249.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">web UI :8787 - polls status at 1 Hz</text>
+<rect x="60" y="290" width="270" height="58" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="195.0" y="315.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0b5c53" text-anchor="middle">engine.Benchmark</text>
+<text x="195.0" y="331.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">N worker threads send HTTP requests</text>
+<rect x="60" y="368" width="270" height="58" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
+<text x="195.0" y="393.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0b5c53" text-anchor="middle">samplers.SamplerSet</text>
+<text x="195.0" y="409.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">cgroup - procfs - docker stats - health - mysql</text>
+<rect x="60" y="452" width="270" height="58" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6"/>
+<text x="195.0" y="477.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">grading.grade -&gt; report.build</text>
+<text x="195.0" y="493.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">S1-S9 - verdict - self-contained HTML</text>
+<rect x="60" y="528" width="270" height="46" rx="8" fill="#eff3f8" stroke="#7a8899" stroke-width="1.1"/>
+<rect x="60" y="528" width="4" height="46" rx="2" fill="#7a8899" stroke="#7a8899" stroke-width="0"/>
+<text x="74" y="550" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">No pip install. No WebSockets. No third-party JS.</text>
+<rect x="360" y="300" width="170" height="34" rx="17.0" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.2"/>
+<text x="445.0" y="320.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="middle">HTTP client</text>
+<rect x="360" y="380" width="170" height="34" rx="17.0" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.2"/>
+<text x="445.0" y="400.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#432a91" text-anchor="middle">docker exec / stats</text>
+<rect x="360" y="440" width="170" height="68" rx="8" fill="#eff3f8" stroke="#7a8899" stroke-width="1.1"/>
+<rect x="360" y="440" width="4" height="68" rx="2" fill="#7a8899" stroke="#7a8899" stroke-width="0"/>
+<text x="374" y="462" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">config.json</text>
+<text x="374" y="478.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">profiles, phases,</text>
+<text x="374" y="495.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">guardrails</text>
+<rect x="360" y="522" width="170" height="52" rx="8" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.1"/>
+<rect x="360" y="522" width="4" height="52" rx="2" fill="#6d4bd8" stroke="#6d4bd8" stroke-width="0"/>
+<text x="374" y="544" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">runtime_comparison.py</text>
+<text x="374" y="560.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">5 language toolchains</text>
+<polyline points="330.0,319.0 360.0,319.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue)"/>
+<polyline points="330.0,397.0 360.0,397.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet)" stroke-dasharray="7 5"/>
+<rect x="670" y="150" width="225" height="62" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="782.5" y="177.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">Target app container</text>
+<text x="782.5" y="193.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">e.g. spid3rweb-app :8000</text>
+<rect x="670" y="230" width="225" height="62" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="782.5" y="258.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#432a91" text-anchor="middle">cgroup v2 files</text>
+<text x="782.5" y="273.0" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">memory.stat - cpu.stat - io.stat - *.pressure</text>
+<rect x="670" y="310" width="225" height="62" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="782.5" y="337.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#432a91" text-anchor="middle">/proc/&lt;pid&gt; + docker stats</text>
+<text x="782.5" y="352.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">RSS - threads - restarts - OOMKilled</text>
+<rect x="670" y="390" width="225" height="62" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6"/>
+<text x="782.5" y="417.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#3f4c5c" text-anchor="middle">MySQL (optional)</text>
+<text x="782.5" y="433.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">mysql collector</text>
+<rect x="915" y="150" width="225" height="62" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6"/>
+<text x="1027.5" y="177.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#3f4c5c" text-anchor="middle">Container limits</text>
+<text x="1027.5" y="193.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">--cpus - --memory - --cpuset-cpus</text>
+<rect x="915" y="230" width="225" height="62" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6"/>
+<text x="1027.5" y="257.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#3f4c5c" text-anchor="middle">Runtime adapter (optional)</text>
+<text x="1027.5" y="273.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">app /__hlc/runtime JSON endpoint</text>
+<rect x="915" y="310" width="225" height="62" rx="10" fill="#eff3f8" stroke="#7a8899" stroke-width="1.6"/>
+<text x="1027.5" y="337.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#3f4c5c" text-anchor="middle">Headless Chrome (optional)</text>
+<text x="1027.5" y="353.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">CDP: FCP / LCP / JS heap</text>
+<rect x="915" y="390" width="225" height="62" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
+<text x="1027.5" y="417.3" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#432a91" text-anchor="middle">Spid3r 1.0.0 binary</text>
+<text x="1027.5" y="433.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="middle">in-Docker language benchmark</text>
+<line x1="600" y1="118" x2="600" y2="580" stroke="#c0392b" stroke-width="2" stroke-dasharray="8 6"/>
+<polyline points="530.0,317.0 578.0,317.0 578.0,181.0 670.0,181.0" fill="none" stroke="#2563eb" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_blue)"/>
+<polyline points="530.0,397.0 622.0,397.0 622.0,261.0 670.0,261.0" fill="none" stroke="#6d4bd8" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_violet)" stroke-dasharray="7 5"/>
+<rect x="670" y="470" width="470" height="100" rx="8" fill="#fff2dc" stroke="#c07a12" stroke-width="1.1"/>
+<rect x="670" y="470" width="4" height="100" rx="2" fill="#c07a12" stroke="#c07a12" stroke-width="0"/>
+<text x="684" y="493" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="start">What this means</text>
+<text x="684" y="510" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="start">docker_lab  = both arrows live  -&gt;  visibility: full_server</text>
+<text x="684" y="527" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="start">live_blackbox = blue arrow only  -&gt;  client_only  -&gt;  NOT comparable</text>
+<text x="684" y="544" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="400" fill="#5b6b7d" text-anchor="start">An external HTTP client can NEVER reconstruct server CPU, RAM or OOM events.</text>
+<rect x="490" y="592" width="220" height="26" rx="13.0" fill="#fdeaea" stroke="#c0392b" stroke-width="1.2"/>
+<text x="600.0" y="608.74" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#822018" text-anchor="middle">NETWORK BOUNDARY</text>
+<rect x="36" y="632" width="15" height="11" rx="3" fill="#e8f0ff" stroke="#2563eb" stroke-width="1"/>
+<text x="57" y="641.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Blue = HTTP requests / responses (always)</text>
+<rect x="356.40000000000003" y="632" width="15" height="11" rx="3" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1"/>
+<text x="377.40000000000003" y="641.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Violet = docker exec / docker stats (docker_lab)</text>
+<rect x="721.6000000000001" y="632" width="15" height="11" rx="3" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1"/>
+<text x="742.6000000000001" y="641.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Always on</text>
+<rect x="837.2000000000002" y="632" width="15" height="11" rx="3" fill="#eff3f8" stroke="#7a8899" stroke-width="1"/>
+<text x="858.2000000000002" y="641.5" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Optional</text>
+<line x1="36" y1="656" x2="1164" y2="656" stroke="#d8e1ec" stroke-width="1"/>
+<text x="36" y="676" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/engine.py, samplers.py, collectors/, docker_probe.py, server.py, docs/benchmark-modes.md</text>
+</svg>
