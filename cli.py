@@ -6,7 +6,14 @@ Examples:
   python cli.py --url http://localhost:8090/ --profile smoke
   python cli.py --url http://localhost:3000/ --container my-web --profile quick
   python cli.py --config my-config.json --profile standard
+  python cli.py --runtime-env docker --container my-web --profile quick
   python cli.py --list
+
+Runtime environment (exclusive switch, Windows by default):
+  windows -> locally installed runtimes are load-checked, HTTP test is
+             client-only (latency / throughput / errors, no cgroup metrics)
+  docker  -> keeps the Windows host baselines AND adds the deployed Spid3r
+             binary in the container plus full cgroup CPU / memory metrics
 """
 from __future__ import annotations
 
@@ -31,8 +38,16 @@ from heavyload.util import LogBuffer, stamp  # noqa: E402
 def build_parser():
     ap = argparse.ArgumentParser(
         prog="cli.py",
-        description="Check the heavy-load behavior of any HTTP website "
-                    "(Docker cgroup instrumentation when available).")
+        description="Check the heavy-load behavior of any HTTP website. "
+                    "Windows runtime (installed runtimes, client-only HTTP "
+                    "metrics) is the default; --runtime-env docker adds "
+                    "container cgroup instrumentation.")
+    ap.add_argument("--runtime-env", dest="runtime_env",
+                    choices=C.RUNTIME_ENVIRONMENTS,
+                    help="exclusive runtime environment switch (default: "
+                         "windows). Decides BOTH which installed runtimes are "
+                         "load-checked and which HTTP metrics are collected. "
+                         "'docker' requires a running Docker daemon.")
     ap.add_argument("--url", help="target URL, e.g. http://localhost:8090/")
     ap.add_argument("--profile", choices=sorted(C.PRESETS),
                     help="schedule preset")
@@ -100,6 +115,24 @@ def main(argv=None):
             cfg = json.load(f)
     elif os.path.isfile(os.path.join(a.root, "config.json")):
         cfg = C.load_config(os.path.join(a.root, "config.json"))
+
+    # -- exclusive runtime environment switch --------------------------------
+    # Apply the coherent preset ONLY when the selector actually changes. A
+    # saved config carries explicit derived keys, so re-deriving on every
+    # invocation would silently discard advanced overrides (--mode, a custom
+    # benchmark_mode, apply_profile, etc.).
+    if a.runtime_env:
+        norm_now, _ = C.validate(cfg)
+        current_env = (norm_now or {}).get("runtime_environment", "windows")
+        if a.runtime_env != current_env:
+            try:
+                cfg = C.apply_runtime_environment(cfg, a.runtime_env)
+            except Exception as ex:
+                print("Configuration error: %s" % ex, file=sys.stderr)
+                return 2
+        else:
+            cfg = dict(cfg)
+            cfg["runtime_environment"] = a.runtime_env
 
     if a.list:
         rows = runner.list_runs(a.root, include_archive=a.include_archive)
@@ -275,6 +308,24 @@ def main(argv=None):
     norm, err = C.validate(cfg)
     if err:
         print("Configuration error: %s" % err, file=sys.stderr)
+        return 2
+
+    # A Windows run is client-only by construction. Reject explicit advanced
+    # overrides that would ask for server-side instrumentation under it: the
+    # runner would ignore them, so accepting them would be a silent lie.
+    # Only explicit CLI flags are rejected; a saved legacy config is left to
+    # the hard collector / schema gates instead of breaking old invocations.
+    incoherent = []
+    if norm["runtime_environment"] == "windows":
+        if a.mode and norm["mode"] != "direct":
+            incoherent.append("--mode %s" % norm["mode"])
+        if a.benchmark_mode and norm["benchmark_mode"] != "live_blackbox":
+            incoherent.append("--benchmark-mode %s" % norm["benchmark_mode"])
+    if incoherent:
+        print("Windows runtime mode is client-only: %s requires Docker cgroup "
+              "instrumentation and cannot be combined with it. Use "
+              "--runtime-env docker instead." % ", ".join(incoherent),
+              file=sys.stderr)
         return 2
 
     if a.preflight_only or a.discover_routes:

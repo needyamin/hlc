@@ -16,6 +16,7 @@
     </div>
   </div>
   <div class="topmeta">
+    <span id="runtime-pill" class="pill">Runtime: Windows</span>
     <span id="docker-pill" class="pill">checking Docker...</span>
     <span id="state-pill" class="pill gray">idle</span>
   </div>
@@ -25,33 +26,63 @@
   <!-- ============================ LEFT: CONFIGURATION ==================== -->
   <div class="col">
     <section class="card">
-      <h2><span class="num">1</span> Target</h2>
-      <p class="hint">Enter the URL of any website. If it runs in Docker, the
-        container is auto-detected from the published port and cgroup memory is
-        instrumented.</p>
+      <h2><span class="num">1</span> Runtime environment</h2>
+      <p class="hint">One <strong>exclusive</strong> choice decides both which
+        installed runtimes are load-checked and which metrics the HTTP load
+        test can collect. <strong>Windows is the default.</strong></p>
+      <fieldset class="runtimeswitch" aria-describedby="runtime-disclosure">
+        <legend>Runtime environment</legend>
+        <label class="rtopt" for="rt-windows">
+          <input id="rt-windows" type="radio" name="runtime_environment"
+                 value="windows" checked>
+          <span class="rtbody">
+            <strong>Windows <em>(default, installed runtimes)</em></strong>
+            <span class="rtdesc">Load-checks PHP, Python, Node, Rust and Spid3r
+              installed on this host. The HTTP test is <strong>client-only</strong>:
+              latency, throughput, error taxonomy and availability. No server
+              CPU / memory / cgroup metrics.</span>
+          </span>
+        </label>
+        <label class="rtopt" for="rt-docker">
+          <input id="rt-docker" type="radio" name="runtime_environment"
+                 value="docker">
+          <span class="rtbody">
+            <strong>Docker <em>(container)</em></strong>
+            <span class="rtdesc">Keeps the Windows host baselines (they are the
+              measuring stick) and <strong>adds</strong> the deployed Spid3r
+              binary in the container plus full cgroup CPU, memory, PSI and
+              OOM metrics. Requires a running Docker daemon.</span>
+          </span>
+        </label>
+      </fieldset>
+      <div id="runtime-disclosure" class="disclosure" role="status"
+           aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="num">2</span> Target</h2>
+      <p class="hint" id="target-hint">Enter the URL of any website. In Windows
+        runtime mode the HTTP test is client-only; no container is contacted.</p>
       <label class="fld">
         <span>Website URL</span>
         <input id="url" type="text" spellcheck="false"
                placeholder="http://localhost:8090/">
       </label>
       <div class="grid2">
-        <label class="fld">
-          <span>Docker container</span>
+        <label class="fld" id="container-field">
+          <span>Docker container <em id="container-field-note"></em></span>
           <select id="container"></select>
         </label>
-        <label class="fld">
+        <label class="fld" id="mysql-container-field">
           <span>MySQL container <em>(optional)</em></span>
           <select id="mysql-container"></select>
         </label>
       </div>
       <div class="grid2">
         <label class="fld">
-          <span>Instrumentation mode</span>
-          <select id="mode">
-            <option value="auto">auto (detect Docker)</option>
-            <option value="docker">force Docker cgroup</option>
-            <option value="direct">direct HTTP only</option>
-          </select>
+          <span>Instrumentation mode <em>(derived)</em></span>
+          <input id="mode" type="text" readonly spellcheck="false"
+                 aria-describedby="runtime-disclosure">
         </label>
         <label class="fld">
           <span>Health probe path</span>
@@ -66,7 +97,7 @@
     </section>
 
     <section class="card">
-      <h2><span class="num">2</span> Workload</h2>
+      <h2><span class="num">3</span> Workload</h2>
       <p class="hint">GET routes and relative weights. Higher weight = more
         requests to that route.</p>
       <div id="path-rows" class="pathrows"></div>
@@ -78,7 +109,7 @@
     </section>
 
     <section class="card">
-      <h2><span class="num">3</span> Load profile</h2>
+      <h2><span class="num">4</span> Load profile</h2>
       <p class="hint">Presets replace the phase schedule and concurrency ceiling.
         Start with <strong>Smoke</strong> on an unknown target.</p>
       <div id="presets" class="chips"></div>
@@ -126,7 +157,7 @@
   <!-- ============================ RIGHT: RUN CONTROL ===================== -->
   <div class="col">
     <section class="card runcard">
-      <h2><span class="num">4</span> Run benchmark</h2>
+      <h2><span class="num">5</span> Run benchmark</h2>
       <div class="row buttons">
         <button id="btn-start" class="btn primary">Start benchmark</button>
         <button id="btn-stop" class="btn danger" disabled>Stop</button>
@@ -184,14 +215,18 @@
     <section class="card help">
       <h2>What gets measured</h2>
       <ul>
-        <li><strong>HTTP:</strong> throughput, p50/p95/p99, error taxonomy, per-route and per-phase breakdown.</li>
-        <li><strong>Container:</strong> cgroup v2 <code>memory.stat anon</code> in raw bytes, <code>memory.current</code>, CPU from <code>cpu.stat</code>, PSI, OOM kills, PIDs, restarts.</li>
-        <li><strong>Recovery:</strong> a zero-load cooldown and a 1 Hz availability re-probe separate a retained allocator high-water mark from a true unbounded leak.</li>
-        <li><strong>Deliverable:</strong> a single-file HTML report with inline SVG charts, no JavaScript, no CDN.</li>
+        <li><strong>HTTP (both modes):</strong> throughput, p50/p95/p99, error
+          taxonomy, per-route and per-phase breakdown, health availability.</li>
+        <li><strong>Language runtimes (both modes):</strong> installed host PHP,
+          Python, Node, Rust and Spid3r variants, checksum-verified.</li>
+        <li><strong>Deliverable:</strong> a single-file HTML report with inline
+          SVG charts, no JavaScript, no CDN.</li>
       </ul>
+      <div id="measured-mode" class="measured"></div>
       <p class="hint">The tool never changes container configuration, memory
         limits, or application code. It only sends GET requests and reads
-        cgroup counters. Always use a non-production target first.</p>
+        cgroup counters when Docker is selected. Always use a non-production
+        target first.</p>
     </section>
   </div>
 </div>

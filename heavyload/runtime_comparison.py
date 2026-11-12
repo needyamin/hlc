@@ -40,19 +40,28 @@ from datetime import datetime, timezone
 
 from .util import atomic_json, utc
 
-SCHEMA_VERSION = 1
+# v2 adds runtime_environment / config_meta flags and a "source" tag per
+# variant row. Old v1 documents still render (every new field has a default),
+# but variant counts and geomeans must never be compared across the boundary.
+SCHEMA_VERSION = 2
 EXE = ".exe" if os.name == "nt" else ""
 
 DEFAULT_OPTIONS = {
     "enabled": True,
     "repeats": 5,
     "container": "",           # "" => cfg["container"] or auto-resolve
-    "include_container": True,
+    "include_windows": True,   # installed host toolchains (checked by default)
+    "include_container": False,  # Docker variants only when Docker is chosen
     "include_native": True,
     "include_references": True,
     "write_sources": True,
     "timeout_s": 300,
     "workloads": ["prime", "json", "map"],
+}
+
+RUNTIME_ENVIRONMENT_LABELS = {
+    "windows": "Windows - installed runtimes",
+    "docker": "Docker - container + host baselines",
 }
 
 # Constants are pinned so results stay comparable between runs. If you change
@@ -476,7 +485,8 @@ def detect_tools(cfg, opts):
             tools.setdefault("_errors", {})[key] = _first_line(err)
 
     container = ""
-    if opts.get("include_container", True):
+    # Windows mode never touches Docker: no resolve, no docker exec, no cp.
+    if opts.get("include_container", False):
         container = resolve_container(cfg, opts.get("container", ""))
     tools["container"] = {"available": False, "name": container,
                           "version": "", "spid3r": False}
@@ -498,7 +508,8 @@ def detect_tools(cfg, opts):
 def _build_artifacts(wid, stem, work, tools, opts, warnings, timeout):
     """Compile bytecode / native / rust artifacts. Returns a dict of paths."""
     built = {}
-    if not tools["spid3r"]["available"]:
+    # These artifacts are only consumed by host (Windows) variants.
+    if not opts.get("include_windows", True) or not tools["spid3r"]["available"]:
         return built
     for label, cmd, dest in [
         ("bytecode", ["spid3r", "compile", stem + ".matrix",
@@ -530,47 +541,61 @@ def _build_artifacts(wid, stem, work, tools, opts, warnings, timeout):
 
 
 def _variants(wid, stem, work, tools, opts, built, warnings, timeout):
-    """Return list of dicts: key, label, group, cmd."""
+    """Return list of dicts: key, label, group, source, cmd.
+
+    ``source`` records WHERE a number came from ("windows" or "docker").
+    Docker variants are never silently mixed with host baselines: the report
+    tags each row and names the container so the different environment is
+    visible to anyone reading the numbers.
+    """
     v = []
     pyexe = sys.executable
+    want_windows = bool(opts.get("include_windows", True))
+    want_docker = bool(opts.get("include_container", False))
 
-    def add(key, label, group, cmd):
-        v.append({"key": key, "label": label, "group": group, "cmd": cmd})
+    def add(key, label, group, source, cmd):
+        v.append({"key": key, "label": label, "group": group,
+                  "source": source, "cmd": cmd})
 
-    # --- reference / baseline languages -----------------------------------
-    if opts.get("include_references", True):
-        if tools.get("rustc", {}).get("available") and built.get("rust"):
-            add("rust", "Rust -O native", "reference", [built["rust"]])
-        if tools["node"]["available"]:
-            add("node", "Node %s" % tools["node"]["version"].lstrip("v").split(".")[0],
-                "reference", ["node", stem + ".js"])
-    if tools["php"]["available"]:
-        add("php", "PHP %s" % ".".join(tools["php"]["version"].split(".")[:2]),
-            "baseline", ["php", stem + ".php"])
-    if tools["python"]["available"]:
-        add("python", "Python %s" % ".".join(
-            tools["python"]["version"].split(".")[:2]),
-            "baseline", [pyexe, stem + ".py"])
+    # --- installed Windows / host toolchains -------------------------------
+    if want_windows:
+        if opts.get("include_references", True):
+            if tools.get("rustc", {}).get("available") and built.get("rust"):
+                add("rust", "Rust -O native", "reference", "windows",
+                    [built["rust"]])
+            if tools["node"]["available"]:
+                add("node", "Node %s" % tools["node"]["version"].lstrip("v").split(".")[0],
+                    "reference", "windows", ["node", stem + ".js"])
+        if tools["php"]["available"]:
+            add("php", "PHP %s" % ".".join(tools["php"]["version"].split(".")[:2]),
+                "baseline", "windows", ["php", stem + ".php"])
+        if tools["python"]["available"]:
+            add("python", "Python %s" % ".".join(
+                tools["python"]["version"].split(".")[:2]),
+                "baseline", "windows", [pyexe, stem + ".py"])
 
-    # --- Spid3r on the host -----------------------------------------------
-    if tools["spid3r"]["available"]:
-        ver = tools["spid3r"]["version"].replace("spid3r ", "").split(" ")[0]
-        add("spid3r_tw", "Spid3r %s tree-walk" % ver, "spid3r",
-            ["spid3r", "run", stem + ".matrix"])
-        add("spid3r_vm", "Spid3r %s VM" % ver, "spid3r",
-            ["spid3r", "run", "--engine", "vm", stem + ".matrix"])
-        add("spid3r_vm_noopt", "Spid3r %s VM --no-opt" % ver, "spid3r",
-            ["spid3r", "run", "--engine", "vm", "--no-opt", stem + ".matrix"])
-        if built.get("bytecode"):
-            add("spid3r_bytecode", "Spid3r %s bytecode exec" % ver, "spid3r",
-                ["spid3r", "exec", stem + ".matrixc"])
-        if built.get("native"):
-            add("spid3r_native", "Spid3r %s native --release" % ver,
-                "spid3r", [built["native"]])
+        # --- Spid3r installed on the host ---------------------------------
+        if tools["spid3r"]["available"]:
+            ver = tools["spid3r"]["version"].replace("spid3r ", "").split(" ")[0]
+            add("spid3r_tw", "Spid3r %s tree-walk" % ver, "spid3r",
+                "windows", ["spid3r", "run", stem + ".matrix"])
+            add("spid3r_vm", "Spid3r %s VM" % ver, "spid3r",
+                "windows", ["spid3r", "run", "--engine", "vm", stem + ".matrix"])
+            add("spid3r_vm_noopt", "Spid3r %s VM --no-opt" % ver, "spid3r",
+                "windows", ["spid3r", "run", "--engine", "vm", "--no-opt",
+                            stem + ".matrix"])
+            if built.get("bytecode"):
+                add("spid3r_bytecode", "Spid3r %s bytecode exec" % ver, "spid3r",
+                    "windows", ["spid3r", "exec", stem + ".matrixc"])
+            if built.get("native"):
+                add("spid3r_native", "Spid3r %s native --release" % ver,
+                    "spid3r", "windows", [built["native"]])
 
-    # --- Spid3r inside the live Docker container (the deployed version) ----
+    # --- deployed Spid3r inside the Docker container -----------------------
+    # Docker is ADDITIVE, not a replacement: host baselines are the measuring
+    # stick and must stay so slowdown ratios remain meaningful and honest.
     c = tools.get("container") or {}
-    if c.get("spid3r"):
+    if want_docker and c.get("spid3r"):
         name = c["name"]
         remote = "/tmp/hlc_rt_%s.matrix" % stem
         rc, out, err, _ = _call(
@@ -581,16 +606,20 @@ def _variants(wid, stem, work, tools, opts, built, warnings, timeout):
                             % (wid, name, _first_line(err) or "rc=%s" % rc))
         else:
             cver = c["version"].replace("spid3r ", "").split(" ")[0]
+            tag = "Docker: %s" % name
             add("spid3r_docker_tw",
-                "Spid3r %s tree-walk (Docker)" % cver, "spid3r",
-                ["docker", "exec", name, "spid3r", "run", remote])
+                "Spid3r %s tree-walk (%s)" % (cver, tag), "spid3r",
+                "docker", ["docker", "exec", name, "spid3r", "run", remote])
             add("spid3r_docker_vm",
-                "Spid3r %s VM (Docker)" % cver, "spid3r",
-                ["docker", "exec", name, "spid3r", "run",
-                 "--engine", "vm", remote])
-    elif c.get("name"):
+                "Spid3r %s VM (%s)" % (cver, tag), "spid3r",
+                "docker", ["docker", "exec", name, "spid3r", "run",
+                           "--engine", "vm", remote])
+    elif want_docker and c.get("name"):
         warnings.append("container %s has no spid3r binary; in-Docker "
                         "variants skipped" % c["name"])
+    elif want_docker:
+        warnings.append("Docker mode selected but no container with a Spid3r "
+                        "binary resolved; in-Docker variants skipped")
     return v
 
 
@@ -621,6 +650,12 @@ def run(cfg, out_dir, log=None, container=""):
     wanted = [w for w in (opts.get("workloads") or []) if w in WORKLOAD_INFO]
     if not wanted:
         wanted = list(WORKLOAD_INFO)
+    runtime_env = str(cfg.get("runtime_environment") or "windows").strip().lower()
+    if runtime_env not in RUNTIME_ENVIRONMENT_LABELS:
+        runtime_env = "windows"
+    env_label = RUNTIME_ENVIRONMENT_LABELS[runtime_env]
+    want_windows = bool(opts.get("include_windows", True))
+    want_docker = bool(opts.get("include_container", False))
 
     os.makedirs(out_dir, exist_ok=True)
     warnings = []
@@ -634,6 +669,10 @@ def run(cfg, out_dir, log=None, container=""):
             "prime_n": PRIME_N, "json_rows": JSON_ROWS,
             "json_rounds": JSON_ROUNDS, "map_keys": MAP_KEYS,
             "map_rounds": MAP_ROUNDS, "repeats": repeats,
+            "runtime_environment": runtime_env,
+            "runtime_environment_label": env_label,
+            "include_windows": want_windows,
+            "include_container": want_docker,
         },
         "environment": {},
         "workloads": {},
@@ -655,6 +694,10 @@ def run(cfg, out_dir, log=None, container=""):
         _log(log, "detecting language toolchains")
         tools = detect_tools(cfg, opts)
         data["environment"] = {
+            "runtime_environment": env_label,
+            "comparison_sources": ("Windows + Docker" if want_windows and want_docker
+                                   else "Windows only" if want_windows
+                                   else "Docker only"),
             "spid3r_host": tools["spid3r"]["version"] or "not available",
             "spid3r_container": (tools["container"]["version"]
                                  or "not available"),
@@ -665,10 +708,22 @@ def run(cfg, out_dir, log=None, container=""):
             "rustc": tools.get("rustc", {}).get("version") or "not available",
             "platform": sys.platform,
         }
-        if (not tools["spid3r"]["available"]
-                and not (tools.get("container") or {}).get("spid3r")):
+        if not want_windows and not want_docker:
+            warnings.append("Neither installed Windows runtimes nor Docker "
+                            "variants are enabled; comparison cannot be produced.")
+            data["status"] = "unavailable"
+            data["summary"] = summarize_data(data)
+            _finish(data, out_dir, opts, log)
+            return data
+        if want_windows and not (tools["php"]["available"]
+                                 or tools["python"]["available"]):
+            warnings.append("Baseline unavailable: neither PHP nor Python is "
+                            "installed on the host, so slowdown ratios cannot "
+                            "be computed (measured times are still reported).")
+        if not (tools["spid3r"]["available"]
+                or (tools.get("container") or {}).get("spid3r")):
             warnings.append("No Spid3r binary found on host or in the container "
-                            "- comparison cannot be produced.")
+                            "(%s) - comparison cannot be produced." % env_label)
             data["status"] = "unavailable"
             data["summary"] = summarize_data(data)
             _finish(data, out_dir, opts, log)
@@ -724,7 +779,9 @@ def run(cfg, out_dir, log=None, container=""):
                     continue
                 rows.append({
                     "key": var["key"], "runtime": var["label"],
-                    "group": var["group"], "result": results[0],
+                    "group": var["group"],
+                    "source": var.get("source", "windows"),
+                    "result": results[0],
                     "compute_ms": round(statistics.median(comps), 3),
                     "compute_min_ms": round(min(comps), 3),
                     "compute_max_ms": round(max(comps), 3),
@@ -823,7 +880,12 @@ def summarize_data(data):
     worst = max(all_ratios) if all_ratios else None
     if not by_wid:
         verdict = "No verified workloads - comparison unavailable."
-    elif best is not None and best > 1:
+    elif best is None:
+        # Guard: baselines exist but no Spid3r variant was measured, so there
+        # are no ratios. Never claim Spid3r "matched or beat" anything.
+        verdict = ("No PHP/Python baseline or Spid3r variant could be measured "
+                   "- slowdown ratios unavailable.")
+    elif best > 1:
         verdict = ("Spid3r is slower than PHP and Python on every measured "
                    "workload (%.2fx-%.2fx)." % (best, worst))
     else:
@@ -849,6 +911,10 @@ def summarize(data):
         "schema_version": SCHEMA_VERSION,
         "status": data.get("status"),
         "generated_utc": data.get("generated_utc"),
+        "runtime_environment": (data.get("environment") or {}).get(
+            "runtime_environment", ""),
+        "comparison_sources": (data.get("environment") or {}).get(
+            "comparison_sources", ""),
         "verdict": s.get("verdict"),
         "workloads_verified": s.get("workloads_verified"),
         "variants": s.get("variants"),
@@ -900,6 +966,8 @@ margin-bottom:6px;font-size:12px}
 .bartrack{background:#eef1f6;border-radius:4px;height:15px;overflow:hidden}
 .barfill{height:100%;border-radius:4px}
 .barval{text-align:right;font-family:var(--mono);color:var(--muted)}
+.srctag{font-size:10px;font-weight:700;color:#7c3aed;background:#f3e8ff;
+border:1px solid #ddd0fe;border-radius:4px;padding:1px 5px;margin-left:5px}
 ul{margin:6px 0 10px;padding-left:20px}li{margin-bottom:4px}
 .verdict{border-left:4px solid var(--orange);background:#fff6f1;padding:12px 16px;
 border-radius:0 8px 8px 0;margin:12px 0}
@@ -917,10 +985,35 @@ def _f(v, d=2):
     return "n/a" if v is None else ("%.*f" % (d, v))
 
 
+def row_source(row, *, provenance_recorded=True):
+    """WHERE a comparison row was measured: 'windows', 'docker' or 'unavailable'."""
+    src = row.get("source")
+    if src in ("windows", "docker"):
+        return src  # v2 authoritative
+    if (str(row.get("key") or "").startswith("spid3r_docker_")
+            or "(Docker)" in str(row.get("runtime") or "")):
+        return "docker"  # unambiguous evidence even in a v1 archive
+    if provenance_recorded:
+        return "windows"
+    return "unavailable"  # never invent a source for an unrecorded v1 row
+
+
 def build_html(data, out_path):
     """Render a single-file, dependency-free HTML report."""
     s = data.get("summary") or {}
     env = data.get("environment") or {}
+
+    # One v1 provenance guard, computed once and reused by every consumer below.
+    schema_v = int(data.get("schema_version") or 1)
+    provenance_recorded = schema_v >= 2 and (
+        "runtime_environment" in (data.get("environment") or {})
+        or "runtime_environment_label" in (data.get("config_meta") or {}))
+    all_rows = [r for w in (data.get("workloads") or {}).values()
+                for r in (w.get("rows") or [])]
+    docker_rows = [r for r in all_rows
+                   if row_source(r, provenance_recorded=provenance_recorded)
+                   == "docker"]
+
     P = ["<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">",
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
          "<title>Runtime Comparison - %s</title>" % _e(data.get("generated_utc")),
@@ -933,7 +1026,12 @@ def build_html(data, out_path):
     P.append('<p class="sub">Spid3r vs PHP / Python / Node / Rust &middot; '
              'generated %s &middot; checksum-verified, no simulated values</p>'
              % _e(data.get("generated_utc")))
+    env_label = ((data.get("environment") or {}).get("runtime_environment")
+                 or (data.get("config_meta") or {}).get("runtime_environment_label")
+                 or ("Windows - installed runtimes" if provenance_recorded
+                     else "provenance not recorded (schema v1)"))
     P.append('<span class="badge %s">status: %s</span>' % (bcls, _e(status)))
+    P.append('<span class="badge">runtime: %s</span>' % _e(env_label))
     P.append('<span class="badge">%s workloads</span>'
              % _e(s.get("workloads_verified", 0)))
     P.append('<span class="badge">%s variants</span>' % _e(s.get("variants", 0)))
@@ -971,20 +1069,34 @@ def build_html(data, out_path):
                 color = {"spid3r": "#f85606", "baseline": "#2563eb",
                          "reference": "#94a3b8"}.get(r.get("group"), "#94a3b8")
                 pct = max(1.0, r["compute_ms"] / mx * 100)
-                P.append('<div class="barrow"><div class="barlabel">%s</div>'
+                src = row_source(r, provenance_recorded=provenance_recorded)
+                if src == "docker":
+                    tag = '<span class="srctag">Docker</span>'
+                elif src == "unavailable":
+                    tag = '<span class="srctag">source unavailable</span>'
+                else:
+                    tag = ""
+                P.append('<div class="barrow"><div class="barlabel">%s%s</div>'
                          '<div class="bartrack"><div class="barfill" '
                          'style="width:%.1f%%;background:%s"></div></div>'
                          '<div class="barval">%s ms</div></div>'
-                         % (_e(r["runtime"]), pct, color, _f(r["compute_ms"], 3)))
-            P.append("<table><thead><tr><th>Runtime / engine</th>"
+                         % (_e(r["runtime"]), tag, pct, color,
+                            _f(r["compute_ms"], 3)))
+            P.append("<table><thead><tr><th>Runtime / engine</th><th>Where</th>"
                      "<th class=\"num\">Median ms</th><th class=\"num\">Min</th>"
                      "<th class=\"num\">Max</th></tr></thead><tbody>")
             for r in rows:
                 cls = {"spid3r": " class=\"spid3r\"",
                        "baseline": " class=\"base\""}.get(r.get("group"), "")
-                P.append("<tr%s><td>%s</td><td class=\"num\">%s</td>"
+                src = row_source(r, provenance_recorded=provenance_recorded)
+                where = ("Docker container" if src == "docker"
+                         else "Windows host" if src == "windows"
+                         else "unavailable (provenance not recorded)")
+                P.append("<tr%s><td>%s</td><td>%s</td>"
+                         "<td class=\"num\">%s</td>"
                          "<td class=\"num\">%s</td><td class=\"num\">%s</td></tr>"
-                         % (cls, _e(r["runtime"]), _f(r["compute_ms"], 3),
+                         % (cls, _e(r["runtime"]), _e(where),
+                            _f(r["compute_ms"], 3),
                             _f(r["compute_min_ms"], 3),
                             _f(r["compute_max_ms"], 3)))
             P.append("</tbody></table>")
@@ -1032,6 +1144,21 @@ def build_html(data, out_path):
         P.append("<tr><td>%s</td><td><code>%s</code></td></tr>"
                  % (_e(k), _e(v)))
     P.append("</tbody></table>")
+    if docker_rows:
+        P.append('<p class="note"><strong>Docker rows run in a different '
+                 'environment</strong> than the host baselines (container CPU / '
+                 'filesystem / image). The container name is printed in each '
+                 'Docker variant label. Ratios against host PHP / Python are '
+                 'therefore approximate and are never presented as an '
+                 'apples-to-apples deployment benchmark.</p>')
+    elif (provenance_recorded
+          and not (data.get("config_meta") or {}).get("include_container")):
+        P.append('<p class="note">Windows runtime mode: only toolchains '
+                 'installed on this host were measured. No Docker container '
+                 'was contacted and no container variant is present.</p>')
+    else:
+        P.append('<p class="note">Provenance not recorded for this archived run '
+                 '(schema v1); the measured sources cannot be determined.</p>')
     P.append("<h3>Method</h3><ul>"
              "<li>Identical algorithm and pinned constants in every language.</li>"
              "<li>Each variant must print the exact expected checksum or it is "
@@ -1068,8 +1195,9 @@ def console_summary(data, stream=None):
     out = stream or sys.stdout
     s = data.get("summary") or {}
     print("\n" + "=" * 76, file=out)
-    print("RUNTIME COMPARISON  status=%s  %s"
-          % (data.get("status"), s.get("verdict", "")), file=out)
+    env = (data.get("environment") or {}).get("runtime_environment", "")
+    print("RUNTIME COMPARISON  status=%s  runtime=%s  %s"
+          % (data.get("status"), env, s.get("verdict", "")), file=out)
     print("=" * 76, file=out)
     for wid, w in (data.get("workloads") or {}).items():
         print("\n%s. %s  [%s]  checksum %s"

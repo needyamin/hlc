@@ -1,13 +1,15 @@
 # Heavy Load Checker
 
 A standard-library-only Python HTTP load tester with a local web UI. It drives
-a phased workload at a target and, when the target is a Docker container **you
-control**, measures real server-side CPU, memory, cgroup pressure, OOM events
+a phased workload at a target and, when the **Docker** runtime environment is
+selected, measures real server-side CPU, memory, cgroup pressure, OOM events
 and per-process usage.
 
 > **Key fact:** for a live website you do not control, an external client can
 > never see server CPU/RAM. Those runs are labelled `client_only` and are not
-> comparable with Docker lab runs. See [docs/benchmark-modes.md](docs/benchmark-modes.md).
+> comparable with Docker lab runs. **Windows runtime mode is the default and is
+> exactly such a client-only run.** See
+> [docs/benchmark-modes.md](docs/benchmark-modes.md).
 
 ## Quickstart
 
@@ -18,7 +20,8 @@ opens <http://127.0.0.1:8787/> (Windows). Or:
 
 ```bash
 python server.py --open              # web UI
-python cli.py --profile smoke        # headless, ~33 s
+python cli.py --profile smoke        # headless, ~33 s, Windows runtime (default)
+python cli.py --runtime-env docker --profile smoke   # add container cgroup metrics
 python cli.py --runtime-comparison   # language-runtime speed only, no HTTP load
 python cli.py --campaign benchmarks/lang-runtime.json   # Phase 2 batch campaign
 python cli.py --compare run-a run-b --output out/       # compare + export runs
@@ -26,8 +29,67 @@ python selftest.py                   # end-to-end regression test
 python -m unittest discover -s tests -v
 ```
 
-Requirements: Python 3.10+ (tested on 3.13), and **Docker Desktop running**
-only if you want server-side metrics. No pip install is required.
+Requirements: Python 3.10+ (tested on 3.13). No pip install is required.
+**Docker Desktop is only needed when you choose the Docker runtime
+environment** — the default Windows mode needs no Docker at all.
+
+## Runtime environment: Windows (default) or Docker
+
+A single **exclusive** switch, `config.runtime_environment`, decides both
+(a) which installed runtimes the language load check measures and (b) which
+vantage point the HTTP load test measures from. There is no second,
+contradictory instrumentation selector.
+
+| | `windows` **(default)** | `docker` |
+|---|---|---|
+| Installed host runtimes (PHP / Python / Node / Rust / Spid3r) | **checked** | checked (kept as baselines) |
+| Spid3r binary inside the container | not measured | **added** to the host baselines |
+| HTTP metrics | latency, throughput, error taxonomy, availability | same, **plus** cgroup CPU / RAM, PSI, OOM, restarts |
+| `visibility` | `client_only` | `full_server` (when a container resolves) |
+| `mode` / `benchmark_mode` | `direct` / `live_blackbox` | `auto` / `auto` → `docker_lab` |
+| Docker daemon needed | **no** | yes |
+| S5 / S6 memory-recovery SLOs | `N/A` — insufficient evidence | graded from cgroup bytes |
+| `include_windows` / `include_container` | `true` / `false` | `true` / `true` |
+
+**Docker is additive, not a replacement.** Host PHP and Python rows are the
+measuring stick for every slowdown ratio, so they stay in both modes. Docker
+rows are tagged `source: "docker"` in the JSON and labelled "Docker container"
+in the HTML, with an explicit note that they run in a *different environment*
+from the host baselines — their ratios are approximate, never an
+apples-to-apples deployment benchmark.
+
+Change it in one place:
+
+```bash
+python cli.py --runtime-env docker --profile smoke   # CLI, one run
+python cli.py --runtime-env windows --profile smoke  # back to the default
+```
+
+or use the **Runtime environment** radio card at the top of the web UI (Windows
+is pre-selected; the Docker option is disabled when no daemon is reachable).
+Or edit `config.json`:
+
+```json
+"runtime_environment": "windows",
+"mode": "direct",
+"benchmark_mode": "live_blackbox",
+"runtime_comparison": { "include_windows": true, "include_container": false }
+```
+
+A saved config predating the switch is **inferred once** from legacy Docker
+signals (`include_container`, `benchmark_mode: docker_lab` /
+`instrumented_live`, or `mode: docker`) so existing Docker setups keep working;
+a fresh config always defaults to Windows. Because a saved config carries the
+derived keys explicitly, always change the switch through `--runtime-env` or
+the web UI: those rewrite all four derived keys together. Setting
+`runtime_environment` alone leaves a half-configured state.
+
+**Windows overrides are rejected, not silently ignored:** `--mode auto|docker`
+or `--benchmark-mode docker_lab|instrumented_live` combined with the Windows
+runtime environment exits with `use --runtime-env docker`. Internally, the
+runner also forces `container=""`, `mode="live_blackbox"`, a hard sampler gate
+and `visibility="client_only"`, so a Windows run can never publish cgroup
+numbers or be ranked against a Docker lab run.
 
 ## Architecture at a glance
 
@@ -109,8 +171,9 @@ VM share physical cores.
 ![Runtime comparison pipeline: pinned workloads, checksum gate, ratios and artifacts](docs/diagrams/06-runtime-comparison.svg)
 
 **Read it as:** three pinned workloads are written in five languages, built
-into 10–11 variants (including the real binary inside the Docker container),
-and timed in-process over N repeats. Any variant whose checksum differs is
+into 10–11 variants (in Windows runtime mode these are the **installed host
+runtimes**; choosing Docker **adds** the real binary inside the container), and
+timed in-process over N repeats. Any variant whose checksum differs is
 **rejected**, so no simulated or estimated value can reach a report. These
 milliseconds measure language-runtime compute — do not compare them with the
 RPS or p99 from the HTTP load test.
@@ -123,7 +186,10 @@ See [docs/diagrams/README.md](docs/diagrams/README.md) for the full index.
 
 This is the "test my language" feature. Alongside the HTTP load test, every run
 executes **three identical, checksum-verified workloads** in every available
-runtime and compares Spid3r against PHP, Python, Node and Rust:
+runtime and compares Spid3r against PHP, Python, Node and Rust. With the
+default **Windows** runtime environment this load-checks the *installed* host
+toolchains only; selecting **Docker** adds the deployed container variants
+while keeping the host baselines (see the table above):
 
 | ID | Workload | What it exercises |
 |---|---|---|
@@ -132,9 +198,9 @@ runtime and compares Spid3r against PHP, Python, Node and Rust:
 | C | String-keyed map lookups, 64 keys x 100,000 | route / config / session style lookups |
 
 Spid3r variants measured: tree-walk, bytecode VM, VM `--no-opt`, bytecode
-`exec`, `build --release`, **and the real Spid3r binary inside the Docker
-container** (so you compare the version you actually deploy, not just the host
-one). Output per run directory:
+`exec`, `build --release`, **and, only when Docker is selected, the real
+Spid3r binary inside the Docker container** (so you compare the version you
+actually deploy, not just the host one). Output per run directory:
 
 ```
 runtime_comparison.json    full raw data: every repeat, min/max, versions, ratios
@@ -166,7 +232,8 @@ Configure in `config.json`:
   "enabled": true,
   "repeats": 5,
   "container": "",
-  "include_container": true,
+  "include_windows": true,
+  "include_container": false,
   "include_native": true,
   "include_references": true,
   "write_sources": true,
@@ -175,9 +242,16 @@ Configure in `config.json`:
 }
 ```
 
-`container` empty means use `config.container`, or auto-resolve it from the
-published Docker port. Missing toolchains are skipped with a warning — they are
-never simulated.
+`include_windows: true` is what makes the *default* run load-check the
+installed host toolchains. `include_container: false` is the default; choosing
+the Docker runtime environment sets it to `true` **without** turning
+`include_windows` off, because `summarize_data()` computes every slowdown ratio
+against the host PHP / Python baselines. `container` empty means use
+`config.container`, or auto-resolve it from the published Docker port — only
+relevant in Docker mode. Missing toolchains are skipped with a warning — they
+are never simulated. Archived v1 comparison documents have no recorded
+provenance; their rows are labelled from evidence (Docker keys / "(Docker)"
+labels) and otherwise `unavailable`, never invented as Windows.
 
 **Honesty rules baked into the code:** workload constants are pinned; every
 variant must print the exact expected checksum or it is **rejected and never
@@ -195,16 +269,21 @@ B  RESULT 249868800 9163
 C  RESULT 44432313 100000
 ```
 
-## Three benchmark modes
+## Benchmark modes (derived from the runtime switch)
 
-| `benchmark_mode` | Server CPU/RAM | Comparable across languages |
-|---|---|---|
-| `docker_lab` (default when a container is found) | Yes | **Yes** |
-| `live_blackbox` | No — `visibility: client_only` | **No** |
-| `instrumented_live` | Via your own Prometheus/APM agent (future adapter) | Possible |
+| `benchmark_mode` | Server CPU/RAM | Comparable across languages | Selected by |
+|---|---|---|---|
+| `live_blackbox` **(default)** | No — `visibility: client_only` | **No** | `runtime_environment: windows` |
+| `docker_lab` | Yes | **Yes** | `runtime_environment: docker` + a resolving container |
+| `instrumented_live` | Via your own Prometheus/APM agent (future adapter) | Possible | advanced override |
 
-Set `config.benchmark_mode` to `docker_lab`, `live_blackbox`,
-`instrumented_live`, or `auto` (auto = docker_lab if a container resolves).
+The `Runtime environment` switch is the primary control; `mode` and
+`benchmark_mode` are **derived** from it and are shown read-only in the web UI.
+`auto` means `docker_lab` when a container resolves, otherwise client-only
+`live_blackbox`. Advanced users can still set `config.benchmark_mode` directly,
+but a Windows run is always forced back to client-only internally (no cgroup
+collectors, `visibility = client_only`, S5/S6 graded `N/A`). A
+`live_blackbox` result can never be ranked against a `docker_lab` result.
 
 ## Folder layout
 

@@ -1,9 +1,10 @@
 {
   "schema_version": 2,
+  "runtime_environment": "windows",
   "target_url": "http://localhost:8090/",
   "container": "spid3rweb-app",
   "mysql_container": "",
-  "mode": "auto",
+  "mode": "direct",
   "profile": "smoke",
   "health_path": "/health",
   "paths": [
@@ -115,7 +116,7 @@
       "concurrency": 0
     }
   ],
-  "benchmark_mode": "docker_lab",
+  "benchmark_mode": "live_blackbox",
   "target": {
     "site_id": "",
     "group": "",
@@ -154,7 +155,8 @@
     "enabled": true,
     "repeats": 2,
     "container": "",
-    "include_container": true,
+    "include_windows": true,
+    "include_container": false,
     "include_native": true,
     "include_references": true,
     "write_sources": true,

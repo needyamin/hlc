@@ -1,0 +1,218 @@
+{
+  "columns": [
+    [
+      "site_id",
+      "Site",
+      "str"
+    ],
+    [
+      "language",
+      "Lang",
+      "str"
+    ],
+    [
+      "stack_label",
+      "Stack",
+      "str"
+    ],
+    [
+      "runtime_version",
+      "Runtime",
+      "str"
+    ],
+    [
+      "overall_rps",
+      "RPS (overall)",
+      "num1"
+    ],
+    [
+      "peak_phase_rps",
+      "RPS (peak phase)",
+      "num1"
+    ],
+    [
+      "p95_ms",
+      "p95 ms (as-sched)",
+      "num1"
+    ],
+    [
+      "error_pct",
+      "Error %",
+      "pct"
+    ],
+    [
+      "cpu_peak_pct_net",
+      "CPU peak % (net)",
+      "num2"
+    ],
+    [
+      "cpu_mean_pct_net",
+      "CPU mean % (net)",
+      "num2"
+    ],
+    [
+      "mem_anon_mib_peak_net",
+      "Mem peak MiB (net)",
+      "num1"
+    ],
+    [
+      "mem_net_change_mib",
+      "Mem \u0394 MiB",
+      "num1"
+    ],
+    [
+      "mb_per_1k_req",
+      "MB / 1k req",
+      "num3"
+    ],
+    [
+      "health_score",
+      "Health /100",
+      "num0"
+    ],
+    [
+      "verdict_code",
+      "Verdict",
+      "str"
+    ],
+    [
+      "image_digest",
+      "Image digest",
+      "str"
+    ]
+  ],
+  "comparable": true,
+  "comparison_reasons": [],
+  "generated_utc": "2026-11-11T18:45:45+00:00",
+  "leaderboard": [
+    {
+      "benchmark_mode": "docker_lab",
+      "cpu_mean_pct_net": 142.21,
+      "cpu_peak_pct_net": 271.25,
+      "duration_s": 34.81,
+      "error_pct": 0.0,
+      "group": "",
+      "health_score": 100,
+      "health_success_pct": 100.0,
+      "image_digest": "",
+      "language": "",
+      "mb_per_1k_req": 92.949,
+      "mem_anon_mib_peak_net": 284.4,
+      "mem_net_change_mib": 280.8,
+      "overall_rps": 86.8,
+      "p95_as_scheduled_ms": 142.14,
+      "p95_ms": 142.14,
+      "peak_phase_rps": 159.17,
+      "pids_max": 27,
+      "profile": "smoke",
+      "run_id": "run-20261112-003601",
+      "runtime_version": "",
+      "site_id": "http://localhost:8090/",
+      "stack_label": " ",
+      "started_utc": "2026-11-11T18:36:01+00:00",
+      "total_requests": 3021,
+      "verdict": "GO",
+      "verdict_code": "GO",
+      "visibility": "full_server"
+    },
+    {
+      "benchmark_mode": "docker_lab",
+      "cpu_mean_pct_net": 141.37,
+      "cpu_peak_pct_net": 265.89,
+      "duration_s": 34.79,
+      "error_pct": 0.0,
+      "group": "",
+      "health_score": 100,
+      "health_success_pct": 100.0,
+      "image_digest": "",
+      "language": "",
+      "mb_per_1k_req": 20.107,
+      "mem_anon_mib_peak_net": 65.8,
+      "mem_net_change_mib": 59.9,
+      "overall_rps": 85.62,
+      "p95_as_scheduled_ms": 150.99,
+      "p95_ms": 150.99,
+      "peak_phase_rps": 159.34,
+      "pids_max": 28,
+      "profile": "smoke",
+      "run_id": "run-20261112-003649",
+      "runtime_version": "",
+      "site_id": "http://localhost:8090/",
+      "stack_label": " ",
+      "started_utc": "2026-11-11T18:36:49+00:00",
+      "total_requests": 2979,
+      "verdict": "GO",
+      "verdict_code": "GO",
+      "visibility": "full_server"
+    }
+  ],
+  "missing": [],
+  "run_ids": [
+    "run-20261112-003601",
+    "run-20261112-003649"
+  ],
+  "schema_version": 2,
+  "sites": [
+    {
+      "benchmark_mode": "docker_lab",
+      "cpu_mean_pct_net": 142.21,
+      "cpu_peak_pct_net": 271.25,
+      "duration_s": 34.81,
+      "error_pct": 0.0,
+      "group": "",
+      "health_score": 100,
+      "health_success_pct": 100.0,
+      "image_digest": "",
+      "language": "",
+      "mb_per_1k_req": 92.949,
+      "mem_anon_mib_peak_net": 284.4,
+      "mem_net_change_mib": 280.8,
+      "overall_rps": 86.8,
+      "p95_as_scheduled_ms": 142.14,
+      "p95_ms": 142.14,
+      "peak_phase_rps": 159.17,
+      "pids_max": 27,
+      "profile": "smoke",
+      "run_id": "run-20261112-003601",
+      "runtime_version": "",
+      "site_id": "http://localhost:8090/",
+      "stack_label": " ",
+      "started_utc": "2026-11-11T18:36:01+00:00",
+      "total_requests": 3021,
+      "verdict": "GO",
+      "verdict_code": "GO",
+      "visibility": "full_server"
+    },
+    {
+      "benchmark_mode": "docker_lab",
+      "cpu_mean_pct_net": 141.37,
+      "cpu_peak_pct_net": 265.89,
+      "duration_s": 34.79,
+      "error_pct": 0.0,
+      "group": "",
+      "health_score": 100,
+      "health_success_pct": 100.0,
+      "image_digest": "",
+      "language": "",
+      "mb_per_1k_req": 20.107,
+      "mem_anon_mib_peak_net": 65.8,
+      "mem_net_change_mib": 59.9,
+      "overall_rps": 85.62,
+      "p95_as_scheduled_ms": 150.99,
+      "p95_ms": 150.99,
+      "peak_phase_rps": 159.34,
+      "pids_max": 28,
+      "profile": "smoke",
+      "run_id": "run-20261112-003649",
+      "runtime_version": "",
+      "site_id": "http://localhost:8090/",
+      "stack_label": " ",
+      "started_utc": "2026-11-11T18:36:49+00:00",
+      "total_requests": 2979,
+      "verdict": "GO",
+      "verdict_code": "GO",
+      "visibility": "full_server"
+    }
+  ],
+  "sort_by": "overall_rps"
+}

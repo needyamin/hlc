@@ -276,12 +276,25 @@ def _runtime_section(rc, run_id=""):
         rows.append([ent.get("label") or key,
                      "%.2fx" % g1 if g1 else "n/a",
                      "%.2fx" % g2 if g2 else "n/a"])
-    body = ["<p>%s %s</p>" % (badge("status: %s" % status, kind), e(verdict)),
+    body = ["<p>%s %s</p>" % (badge("status: %s" % status, kind), e(verdict))]
+    if (rc.get("schema_version") in (None, 1)
+            or not rc.get("runtime_environment")):
+        body.append('<p class="note">Provenance not recorded for this archived '
+                    'runtime comparison (schema v1); measurement sources are '
+                    'unknown.</p>')
+    else:
+        body.append('<p class="note">Runtime environment: <strong>%s</strong>'
+                    '%s</p>'
+                    % (e(rc["runtime_environment"]),
+                       " &middot; measured sources: %s"
+                       % e(rc.get("comparison_sources"))
+                       if rc.get("comparison_sources") else ""))
+    body.append(
             '<p class="note">Language-runtime compute only (prime counting, '
             'JSON round-trip, map lookups). It is NOT an end-to-end HTTP '
             'framework comparison. Constants are pinned and any variant whose '
             'checksum differs from the verified value is rejected, not '
-            'published.</p>']
+            'published.</p>')
     if rows:
         body.append(table(["Spid3r variant", "vs PHP (geomean)",
                            "vs Python (geomean)"], rows))
@@ -552,6 +565,10 @@ def build(results, out_path):
          "%s / %s" % (meta["container"] or "(none)",
                       meta["mysql_container"] or "(none)")],
         ["Mode / profile", "%s / %s" % (cfg["mode"], meta["profile"])],
+        ["Runtime environment / benchmark mode",
+         "%s / %s" % (cfg.get("runtime_environment")
+                      or "unavailable (legacy config)",
+                      cfg.get("benchmark_mode", "auto"))],
         ["Schedule / peak concurrency",
          "%d s / %d workers" % (meta["schedule_s"], meta["peak_concurrency"])],
         ["Route mix", ", ".join("%s (w=%s)" % (p["path"], p["weight"])
@@ -569,10 +586,21 @@ def build(results, out_path):
                             for x in meta["disclosures"]) + "</ul>"
     env = results.get("environment") or {}
     env_rows = [[str(k), str(v)] for k, v in env.items()]
+    windows_note = ""
+    if cfg.get("runtime_environment") == "windows":
+        windows_note = ('<div class="note"><strong>Windows runtime mode '
+                        '&mdash; client-only run.</strong> No server CPU, cgroup '
+                        'memory, PSI or OOM metrics were collected. Latency, '
+                        'throughput, error taxonomy and health are real; '
+                        'memory-recovery SLOs are graded on insufficient '
+                        'evidence, and this run must never be ranked against a '
+                        'Docker lab run. Switch the Runtime environment to '
+                        'Docker for full server visibility.</div>')
     P.append(section("10. Configuration, environment and limitations",
                      table(["Setting", "Value"], conf_rows)
                      + (table(["Environment", "Value"], env_rows) if env_rows else "")
                      + "<h3>Disclosures</h3>" + disc
+                     + windows_note
                      + '<div class="note">%s</div>' % e(a["adjudication_note"]),
                      "Generated %s by Heavy-Load Checker %s."
                      % (datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -10,6 +10,8 @@
   let CFG = null;
   let PRESETS = [];
   let CONTAINERS = [];
+  let RUNTIME_ENVS = [];
+  let DOCKER_AVAILABLE = false;
   let PATHS = [];
   let lastLogSeq = 0;
   let rpsHistory = [];
@@ -37,7 +39,10 @@
   function fill(cfg) {
     $("url").value = cfg.target_url || "";
     $("health-path").value = cfg.health_path || "/health";
-    $("mode").value = cfg.mode || "auto";
+    const env = (cfg.runtime_environment || "windows").toLowerCase();
+    $("rt-windows").checked = env !== "docker";
+    $("rt-docker").checked = env === "docker";
+    applyRuntimeUI();
     $("max-concurrency").value = cfg.max_concurrency;
     $("request-timeout").value = cfg.request_timeout_s;
     $("keep-alive").checked = !!cfg.keep_alive;
@@ -71,8 +76,18 @@
     c.target_url = $("url").value.trim();
     c.container = $("container").value;
     c.mysql_container = $("mysql-container").value;
-    c.mode = $("mode").value;
     c.health_path = $("health-path").value.trim() || "/health";
+    // The exclusive switch is the ONLY runtime control. Derived keys are
+    // never posted: the server preserves advanced overrides when the
+    // selector is unchanged and re-applies the coherent preset when it
+    // changes. Posting stale derived keys would defeat both behaviours.
+    c.runtime_environment = currentRuntimeEnv();
+    delete c.mode;
+    delete c.benchmark_mode;
+    if (c.runtime_comparison) {
+      delete c.runtime_comparison.include_container;
+      delete c.runtime_comparison.include_windows;
+    }
     c.paths = PATHS.filter(p => p.path && p.path.trim())
       .map(p => ({ path: p.path.trim(), weight: Math.max(1, parseInt(p.weight, 10) || 1) }));
     c.max_concurrency = Math.max(1, num("max-concurrency", c.max_concurrency));
@@ -105,6 +120,84 @@
     });
     CFG = r.config;
     return r;
+  }
+
+  /* -------------------------------------------------- runtime environment -- */
+  function currentRuntimeEnv() {
+    return $("rt-docker").checked ? "docker" : "windows";
+  }
+
+  function runtimeOption(env) {
+    return (RUNTIME_ENVS || []).find(x => x.value === env) || {};
+  }
+
+  function applyRuntimeUI() {
+    const env = currentRuntimeEnv();
+    const docker = env === "docker";
+    const opt = runtimeOption(env);
+
+    const pill = $("runtime-pill");
+    pill.textContent = docker ? "Runtime: Docker (full server)"
+                              : "Runtime: Windows (client-only)";
+    pill.className = "pill " + (docker ? "ok" : "warn");
+
+    // Derived, read-only. There is deliberately NO selector here: letting a
+    // user pick "force Docker cgroup" while Windows is selected would produce
+    // a client_only run labelled full_server.
+    $("mode").value = docker
+      ? ((opt.mode || "auto") + " / " + (opt.benchmark_mode || "auto") +
+         " (container cgroup instrumentation)")
+      : ((opt.mode || "direct") + " / " + (opt.benchmark_mode || "live_blackbox") +
+         " (client-only)");
+
+    // Disable, never hide: the configured container stays visible and is
+    // reused when the user switches to Docker.
+    ["container", "mysql-container"].forEach(id => { $(id).disabled = !docker; });
+    $("container-field").classList.toggle("disabled", !docker);
+    $("mysql-container-field").classList.toggle("disabled", !docker);
+    $("container-field-note").textContent = docker ? "" : "(Docker only)";
+
+    $("target-hint").innerHTML = docker
+      ? "Enter the URL of any website. In Docker runtime mode the container " +
+        "is auto-detected from the published port and cgroup memory is " +
+        "instrumented."
+      : "Enter the URL of any website. In Windows runtime mode the HTTP test " +
+        "is <strong>client-only</strong>; no container is contacted.";
+
+    const box = $("runtime-disclosure");
+    if (docker) {
+      box.className = "disclosure " + (DOCKER_AVAILABLE ? "docker" : "bad");
+      box.innerHTML = (DOCKER_AVAILABLE
+        ? "<strong>Docker runtime mode &mdash; full server visibility.</strong> "
+        : "<strong>Docker is not reachable.</strong> ") +
+        "Installed Windows runtimes are still measured as baselines; the " +
+        "container adds Spid3r-in-Docker variants plus cgroup CPU, memory, " +
+        "PSI and OOM metrics. <em>Docker rows run in a different environment " +
+        "than the host baselines, so their ratios are approximate, never an " +
+        "apples-to-apples deployment benchmark.</em>";
+    } else {
+      box.className = "disclosure windows";
+      box.innerHTML = "<strong>Windows runtime &mdash; client-only run.</strong> " +
+        "Installed host runtimes (PHP, Python, Node, Rust, Spid3r) are " +
+        "load-checked. No server CPU, cgroup memory, PSI or OOM metrics are " +
+        "collected; memory-recovery SLOs (S5 / S6) are graded N/A. " +
+        "<em>This run must never be ranked against a Docker lab run.</em> " +
+        "Switch to Docker for full server visibility.";
+    }
+
+    $("measured-mode").innerHTML = docker
+      ? "<ul><li><strong>Container (Docker only):</strong> cgroup v2 " +
+        "<code>memory.stat anon</code> in raw bytes, <code>memory.current</code>, " +
+        "CPU from <code>cpu.stat</code>, PSI, OOM kills, PIDs, restarts.</li>" +
+        "<li><strong>Recovery (Docker only):</strong> a zero-load cooldown and a " +
+        "1&nbsp;Hz availability re-probe separate a retained allocator " +
+        "high-water mark from a true unbounded leak.</li></ul>" +
+        '<p class="hint">Docker variants are <em>added</em> to the Windows ' +
+        "host baselines, not substituted for them.</p>"
+      : '<div class="note"><strong>Not measured in Windows mode:</strong> ' +
+        "server CPU, cgroup memory, PSI, OOM kills, container restarts, " +
+        "memory-recovery SLOs (S5 / S6) and Spid3r-in-Docker variants. " +
+        "The report marks these fields <code>unavailable</code>.</div>";
   }
 
   /* -------------------------------------------------------------- render -- */
@@ -421,6 +514,30 @@
 
   /* --------------------------------------------------------------- events -- */
   function bind() {
+    ["rt-windows", "rt-docker"].forEach(id => {
+      $(id).onchange = async () => {
+        applyRuntimeUI();
+        try {
+          const r = await saveConfig();
+          CFG = r.config;
+          fill(CFG);               // re-sync derived values from the server
+          if (CFG.runtime_environment === "docker") {
+            try {
+              const cr = await api("/api/containers");
+              CONTAINERS = cr.containers || [];
+              renderContainers(CFG.container, CFG.mysql_container);
+            } catch (e) { /* transient */ }
+          }
+          toast("Runtime environment: " +
+            (CFG.runtime_environment === "docker"
+              ? "Docker (full server metrics, host baselines kept)."
+              : "Windows (installed runtimes, client-only)."), "good");
+        } catch (e) {
+          toast(e.message, "bad");
+          fill(CFG);               // roll the radios back on failure
+        }
+      };
+    });
     $("btn-add-path").onclick = () => {
       PATHS.push({ path: "/", weight: 1 });
       renderPaths(PATHS);
@@ -543,12 +660,19 @@
       CFG = b.config;
       PRESETS = b.presets || [];
       CONTAINERS = b.containers || [];
+      RUNTIME_ENVS = b.runtime_environments || [];
       const d = b.docker || {};
+      DOCKER_AVAILABLE = !!d.available;
       const dp = $("docker-pill");
       dp.textContent = d.available
         ? "Docker " + d.server_version + " · " + CONTAINERS.length + " containers"
-        : "Docker unavailable (direct mode)";
+        : "Docker unavailable";
       dp.className = "pill " + (d.available ? "ok" : "warn");
+      // Gate the Docker option on daemon availability, but never disable the
+      // currently selected value (that would leave an uncheckable active
+      // radio); the disclosure carries the warning instead.
+      $("rt-docker").disabled = !d.available
+        && CFG.runtime_environment !== "docker";
       renderContainers(CFG.container, CFG.mysql_container);
       fill(CFG);
       renderPreflight(b.preflight);

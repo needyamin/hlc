@@ -51,6 +51,8 @@ def discover_routes(cfg, candidates=None, limit=16):
 def preflight(cfg):
     """Read-only checks: URL reachability, Docker, container, cgroup, host."""
     checks = []
+    env = str(cfg.get("runtime_environment") or "windows").strip().lower()
+    windows_mode = env == "windows"
     p = http_probe(cfg, cfg["_derived"]["base_path"])
     checks.append({
         "name": "Target reachable",
@@ -75,10 +77,12 @@ def preflight(cfg):
     containers, cerr = dp.list_containers()
     checks.append({
         "name": "Docker daemon",
-        "ok": avail["available"],
+        "ok": avail["available"] or windows_mode,
         "detail": ("server %s, %d running containers"
                    % (avail["server_version"], len(containers))
                    if avail["available"] else
+                   "not required in Windows runtime mode (client-only metrics)"
+                   if windows_mode else
                    "not reachable: %s" % (cerr or "docker ps failed")),
     })
     container, method, note = dp.resolve_container(cfg, containers)
@@ -91,10 +95,12 @@ def preflight(cfg):
         "available": False, "reason": "no container selected"}
     checks.append({
         "name": "cgroup memory instrumentation",
-        "ok": caps.get("available", False),
+        "ok": caps.get("available", False) or windows_mode,
         "detail": ("%s; %s" % (caps.get("version"), caps.get("canonical_metric"))
                    if caps.get("available") else
-                   caps.get("reason", "unavailable")),
+                   "not collected in Windows runtime mode: latency / throughput / "
+                   "error rate only, visibility = client_only"
+                   if windows_mode else caps.get("reason", "unavailable")),
     })
     free = host_free_gb()
     checks.append({
@@ -106,6 +112,7 @@ def preflight(cfg):
     return {
         "ok": all(x["ok"] for x in checks[:2]),
         "target_url": cfg["target_url"],
+        "runtime_environment": env,
         "checks": checks,
         "container": container,
         "container_method": method,
@@ -158,10 +165,15 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     the key "bench" so a UI can request a graceful stop mid-run.
     """
     cfg = C.normalize(cfg)
-    # Never reuse a cached preflight that belongs to a different target:
-    # it would instrument the wrong container.
+    # Never reuse a cached preflight that belongs to a different target OR a
+    # different runtime environment: a Docker-lab preflight carries a resolved
+    # container, and reusing it after switching to Windows would silently
+    # instrument a container while publishing client_only results.
     if (preflight_result
             and preflight_result.get("target_url") == cfg["target_url"]
+            and preflight_result.get("runtime_environment",
+                                     cfg["runtime_environment"])
+            == cfg["runtime_environment"]
             and (not cfg.get("container")
                  or preflight_result.get("container") == cfg["container"])):
         pf = preflight_result
@@ -171,7 +183,17 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     pf["target_url"] = cfg["target_url"]       # repair older cached preflights
     mysql_container = str(cfg.get("mysql_container") or "")
     requested_mode = cfg.get("benchmark_mode", "auto")
-    if requested_mode == "auto":
+    if cfg.get("runtime_environment") == "windows":
+        # The exclusive switch is authoritative. Force a fully client-only run
+        # even when an advanced override or a cached preflight still names a
+        # container: never publish live_blackbox + cgroup-grade hybrids.
+        container = ""
+        mysql_container = ""
+        pf = dict(pf)
+        pf["container"] = ""
+        pf["container_method"] = "windows-runtime"
+        mode = "live_blackbox"
+    elif requested_mode == "auto":
         mode = "docker_lab" if container else "live_blackbox"
     else:
         mode = requested_mode
@@ -182,6 +204,13 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     C.save_config(os.path.join(run_dir, "config.json"), cfg)
     atomic_json(os.path.join(run_dir, "preflight.json"), pf)
     if log:
+        log.add("Runtime environment: %s (mode=%s, benchmark_mode=%s, "
+                "runtime comparison sources=%s)"
+                % (cfg["runtime_environment"], cfg["mode"],
+                   cfg["benchmark_mode"],
+                   "Windows+Docker"
+                   if cfg["runtime_comparison"]["include_container"]
+                   else "Windows only"))
         log.add("Preflight: %s" % "; ".join(
             "%s=%s" % (x["name"], "OK" if x["ok"] else "WARN")
             for x in pf["checks"]))

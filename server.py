@@ -216,6 +216,24 @@ def presets_payload():
     return out
 
 
+def runtime_environments_payload():
+    """Exclusive switch options + the coherent preset each one applies."""
+    out = []
+    for name in C.RUNTIME_ENVIRONMENTS:
+        preset = C.RUNTIME_ENVIRONMENT_DEFAULTS[name]
+        out.append({
+            "value": name,
+            "label": C.RUNTIME_ENVIRONMENT_LABELS[name],
+            "default": name == C.DEFAULTS["runtime_environment"],
+            "mode": preset["mode"],
+            "benchmark_mode": preset["benchmark_mode"],
+            "include_windows": preset["include_windows"],
+            "include_container": preset["include_container"],
+            "client_only": name == "windows",
+        })
+    return out
+
+
 def current_status():
     with STATE["lock"]:
         state, rid = STATE["state"], STATE["run_id"]
@@ -353,6 +371,8 @@ class Handler(BaseHTTPRequestHandler):
                     "derived": {k: v for k, v in STATE["config"]["_derived"].items()
                                 if k != "weighted_paths"},
                     "presets": presets_payload(),
+                    "runtime_environments": runtime_environments_payload(),
+                    "runtime_environment_default": C.DEFAULTS["runtime_environment"],
                     "containers": containers,
                     "container_error": cerr,
                     "docker": dp.docker_available(),
@@ -460,10 +480,40 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if p == "/api/config":
                 incoming = body.get("config", body)
-                merged = dict(STATE["config"])
+                old_cfg = STATE["config"]
+                old_env = old_cfg.get("runtime_environment", "windows")
+                # A typo must never silently reclassify a Docker run as
+                # Windows (or vice versa). File-based migration self-heals,
+                # but an explicit API value is validated instead.
+                if "runtime_environment" in incoming:
+                    raw_env = str(incoming.get("runtime_environment")
+                                  or "").strip().lower()
+                    if raw_env not in C.RUNTIME_ENVIRONMENTS:
+                        return self._err(
+                            "runtime_environment must be one of %s"
+                            % ", ".join(C.RUNTIME_ENVIRONMENTS), 400)
+                else:
+                    raw_env = old_env
+                merged = dict(old_cfg)
                 merged.update(incoming)
                 merged = {k: v for k, v in merged.items()
                           if not k.startswith("_")}
+                # The UI posts a full config clone, so a selector change
+                # arrives with four STALE derived keys from the old
+                # environment. Drop them and re-apply the coherent preset.
+                # When the selector is unchanged, advanced overrides are
+                # preserved untouched (no unconditional re-derivation).
+                if raw_env != old_env:
+                    merged.pop("mode", None)
+                    merged.pop("benchmark_mode", None)
+                    rc = dict(merged.get("runtime_comparison") or {})
+                    rc.pop("include_container", None)
+                    rc.pop("include_windows", None)
+                    merged["runtime_comparison"] = rc
+                    try:
+                        merged = C.apply_runtime_environment(merged, raw_env)
+                    except Exception as ex:
+                        return self._err("configuration error: %s" % ex, 400)
                 norm, err = C.validate(merged)
                 if err:
                     return self._err("configuration error: %s" % err, 400)
@@ -481,11 +531,22 @@ class Handler(BaseHTTPRequestHandler):
 
             if p == "/api/preset":
                 name = str(body.get("name") or "")
+                before = C.public_config(STATE["config"])
                 try:
-                    norm = C.apply_profile(
-                        C.public_config(STATE["config"]), name)
+                    norm = C.apply_profile(before, name)
                 except Exception as ex:
                     return self._err(str(ex), 400)
+                # A profile switch rewrites ONLY the schedule / concurrency
+                # ceiling. Guard the exclusive selector and its derived keys
+                # explicitly so a legacy config (or a future normalize()
+                # change) can never silently flip Windows -> Docker.
+                for k in ("runtime_environment", "mode", "benchmark_mode"):
+                    if k in before:
+                        norm[k] = before[k]
+                rc_before = before.get("runtime_comparison") or {}
+                for k in ("include_container", "include_windows"):
+                    if k in rc_before:
+                        norm["runtime_comparison"][k] = rc_before[k]
                 with STATE["lock"]:
                     STATE["config"] = norm
                     STATE["preflight"] = None

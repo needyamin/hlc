@@ -146,3 +146,38 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:18px 10px 32p
 .campaigns .empty{color:var(--muted);font-size:12px;padding:8px}
 .runmeta{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;
  color:var(--muted);margin:6px 2px 12px}
+
+/* ---- exclusive runtime environment switch -------------------------------- */
+.runtimeswitch{border:1px solid var(--line);border-radius:10px;padding:8px 10px 10px;
+ margin:0 0 10px;min-width:0;background:#fbfcfe}
+.runtimeswitch legend{font-size:11px;font-weight:700;color:var(--muted);
+ text-transform:uppercase;letter-spacing:.5px;padding:0 6px}
+.rtopt{display:flex;align-items:flex-start;gap:10px;padding:10px 11px;margin:6px 0;
+ border:1px solid var(--line);border-radius:9px;background:#fff;cursor:pointer;
+ transition:.15s}
+.rtopt:hover{border-color:#b9c8e4;background:#f9fbff}
+.rtopt:has(input:checked){border-color:var(--blue);background:var(--blue-soft);
+ box-shadow:0 0 0 2px rgba(37,99,235,.10)}
+.rtopt:has(input:disabled){opacity:.5;cursor:not-allowed}
+.rtopt input[type=radio]{width:16px;height:16px;flex:0 0 16px;margin:3px 0 0;
+ accent-color:var(--blue);cursor:pointer}
+.rtopt input[type=radio]:disabled{cursor:not-allowed}
+.rtbody{display:flex;flex-direction:column;gap:3px;min-width:0}
+.rtbody strong{font-size:13px;color:var(--ink)}
+.rtbody strong em{font-style:normal;font-weight:500;color:var(--muted);font-size:11.5px}
+.rtdesc{font-size:11.5px;line-height:1.5;color:#44506a}
+.rtdesc strong{color:var(--ink)}
+.disclosure{font-size:11.8px;line-height:1.55;border-radius:0 9px 9px 0;
+ padding:9px 12px;margin:2px 0 0;border-left:3px solid var(--blue);
+ background:#f8fafc;color:#44506a}
+.disclosure strong{color:var(--ink)}
+.disclosure.windows{border-left-color:var(--amber);background:var(--amber-soft)}
+.disclosure.docker{border-left-color:var(--green);background:var(--green-soft)}
+.disclosure.bad{border-left-color:var(--red);background:var(--red-soft)}
+.fld.disabled{opacity:.55}
+.fld select:disabled{background:#f1f4f9;cursor:not-allowed}
+.fld input[readonly]{background:#f1f4f9;color:var(--muted);cursor:default}
+.measured{margin:10px 0 0}
+.measured ul{margin:0;padding-left:18px;font-size:12px;line-height:1.6;color:#44506a}
+.measured .note{margin-top:6px}
+.measured code{background:#f1f5f9;padding:1px 4px;border-radius:4px;font-size:11px}

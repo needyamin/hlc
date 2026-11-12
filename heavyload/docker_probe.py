@@ -111,6 +111,14 @@ def resolve_container(cfg, containers=None):
     """
     mode = cfg.get("mode", "auto")
     configured = str(cfg.get("container") or "").strip()
+    # The exclusive Windows runtime switch is authoritative over container
+    # resolution. Without this guard a pinned container plus an advanced
+    # --mode override (or a cached Docker preflight) would still collect cgroup
+    # data while the result document claims client_only visibility.
+    if cfg.get("runtime_environment") == "windows":
+        return "", "windows-runtime", (
+            "Windows runtime mode: no container instrumentation, "
+            "client-only metrics (latency / throughput / errors).")
     if mode == "direct":
         return "", "direct", "Direct mode: no container instrumentation."
     if configured:

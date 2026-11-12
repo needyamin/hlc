@@ -34,6 +34,11 @@ def _finding(sev, title, evidence, impact, recommendation):
 
 def grade(results):
     cfg = results["config"]
+    # Config is the primary signal: grade() runs before ensure_current() has
+    # populated results["visibility"] / results["benchmark_mode"].
+    client_only = (str(cfg.get("runtime_environment") or "").strip().lower() == "windows"
+                   or cfg.get("benchmark_mode") == "live_blackbox"
+                   or results.get("visibility") == "client_only")
     slo_cfg = results["slo_targets"]
     s = results["summary"]
     r = results["resources"]
@@ -90,11 +95,17 @@ def grade(results):
     slope = r.get("active_slope_mib_per_s")
     net = r.get("anon_net_change_mib")
     growth = None
-    if slope is not None and r.get("active_window_s") and \
+    if not client_only and slope is not None and r.get("active_window_s") and \
             None not in r["active_window_s"]:
         span = (r["active_window_s"][1] or 0) - (r["active_window_s"][0] or 0)
         growth = slope * span
-    if aborted:
+    if client_only:
+        add("S5", "Bounded anonymous-memory growth",
+            "<= %.0f MiB net active growth" % slo_cfg["max_memory_growth_mib"],
+            "client-only run: no server memory visibility", "N/A",
+            "Windows runtime mode collects no cgroup memory; switch the "
+            "Runtime environment to Docker to grade memory SLOs.")
+    elif aborted:
         add("S5", "Bounded anonymous-memory growth",
             "<= %.0f MiB net active growth" % slo_cfg["max_memory_growth_mib"],
             "peak anon %.1f MiB at abort; net %s MiB"
@@ -122,8 +133,14 @@ def grade(results):
             "gross series is diagnostic only.")
 
     # S6 - cooldown retention ----------------------------------------------
-    ret = r.get("cooldown_retained_pct")
-    if aborted:
+    ret = None if client_only else r.get("cooldown_retained_pct")
+    if client_only:
+        add("S6", "Memory released after zero-load cooldown",
+            "<= %.0f%% retained" % slo_cfg["max_retained_pct"],
+            "client-only run: no server memory visibility", "N/A",
+            "Windows runtime mode collects no cgroup memory; switch the "
+            "Runtime environment to Docker to grade memory SLOs.")
+    elif aborted:
         add("S6", "Memory released after zero-load cooldown",
             "<= %.0f%% retained" % slo_cfg["max_retained_pct"],
             "cooldown start %s MiB / end %s MiB"
@@ -247,7 +264,8 @@ def grade(results):
                           "Distinguish unbounded leak from retained high-water "
                           "allocator behavior using the cooldown series and "
                           "pgscan/pgsteal/PSI counters before claiming a leak."))
-    if (r.get("large_unmap_count") or 0) > 0 and (r.get("pgscan_max") or 0) == 0 \
+    if not client_only and (r.get("large_unmap_count") or 0) > 0 and \
+            (r.get("pgscan_max") or 0) == 0 \
             and (r.get("psi_max_avg10") or 0) == 0:
         f.append(_finding("MEDIUM",
                           "Retained high-water with voluntary process-level unmap",
@@ -297,13 +315,16 @@ def grade(results):
                           "Verify the intended route mix and cookie/session "
                           "behavior before interpreting QPS figures."))
     if not r.get("cgroup_samples"):
+        cgroup_rec = ("Switch the Runtime environment to Docker for "
+                      "server-side memory visibility." if client_only else
+                      "Select the correct container in the interface, or "
+                      "confirm the site really runs outside Docker.")
         f.append(_finding("LOW", "No cgroup instrumentation for this run",
                           "container=%r, mode=%s"
                           % (results["meta"].get("container"), cfg.get("mode")),
                           "Memory SLOs (S5/S6) cannot be graded; only HTTP-level "
                           "evidence is available.",
-                          "Select the correct container in the interface, or "
-                          "confirm the site really runs outside Docker."))
+                          cgroup_rec))
     if aborted:
         f.append(_finding("LOW", "Attribution and repeat-pass decisions are withheld",
                           "evidence floors: active bins=%d, active points=%d, "

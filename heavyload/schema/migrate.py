@@ -83,9 +83,18 @@ def ensure_current(results, *, mode=None, target=None, fingerprint=None,
     if not has_server and mode == "docker_lab" and inferred_server:
         has_server = True
 
-    visibility = ("full_server" if has_server
-                  else "server_via_adapter" if mode == "instrumented_live"
-                  else "client_only")
+    # For a live black-box (Windows client-only) run the resolved mode is
+    # authoritative -- NOT cgroup evidence. A leaked container name / sample
+    # count must never be published as server visibility, so pin client_only
+    # and force has_server off; visibility_map() and the canonical_metric
+    # repair below then also report every server-side metric unavailable.
+    if mode == "live_blackbox":
+        has_server = False
+        visibility = "client_only"
+    else:
+        visibility = ("full_server" if has_server
+                      else "server_via_adapter" if mode == "instrumented_live"
+                      else "client_only")
 
     # -- top level -----------------------------------------------------------
     results.setdefault("schema_version", SCHEMA_VERSION)

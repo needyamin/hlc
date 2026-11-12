@@ -26,6 +26,8 @@ sys.path.insert(0, ROOT)
 from heavyload import config as C  # noqa: E402
 from heavyload import grading, runner, report  # noqa: E402
 from heavyload import runtime_comparison as RC  # noqa: E402
+from heavyload.schema.metrics import can_compare  # noqa: E402
+from heavyload.schema.migrate import ensure_current  # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -82,6 +84,46 @@ def main():
           (err or "")[:52])
     _, err2 = C.validate({"target_url": "ftp://x/"})
     check("reject non-HTTP scheme", err2 is not None)
+
+    # -- exclusive runtime environment switch -----------------------------
+    d = C.normalize({"target_url": "http://x/"})
+    check("Windows runtime is the default",
+          d["runtime_environment"] == "windows", d["runtime_environment"])
+    check("Windows default load-checks installed runtimes",
+          d["runtime_comparison"]["include_windows"] is True and
+          d["runtime_comparison"]["include_container"] is False,
+          "include_windows=%s include_container=%s"
+          % (d["runtime_comparison"]["include_windows"],
+             d["runtime_comparison"]["include_container"]))
+    check("Windows default is direct / client-only",
+          d["mode"] == "direct" and d["benchmark_mode"] == "live_blackbox",
+          "%s / %s" % (d["mode"], d["benchmark_mode"]))
+    check("invalid runtime environment self-heals to Windows",
+          C.normalize({"target_url": "http://x/",
+                       "runtime_environment": "solaris"})
+          ["runtime_environment"] == "windows")
+    legacy = C.normalize({"target_url": "http://x/",
+                          "benchmark_mode": "docker_lab",
+                          "runtime_comparison": {"include_container": True}})
+    check("legacy Docker config is inferred once, not reclassified",
+          legacy["runtime_environment"] == "docker" and
+          legacy["runtime_comparison"]["include_container"] is True,
+          legacy["runtime_environment"])
+    flip_d = C.apply_runtime_environment(C.public_config(d), "docker")
+    check("switch to Docker adds container + cgroup metrics",
+          flip_d["runtime_environment"] == "docker" and
+          flip_d["mode"] == "auto" and flip_d["benchmark_mode"] == "auto" and
+          flip_d["runtime_comparison"]["include_container"] is True and
+          flip_d["runtime_comparison"]["include_windows"] is True)
+    flip_w = C.apply_runtime_environment(flip_d, "windows")
+    check("switch back to Windows rewrites all derived keys",
+          flip_w["runtime_environment"] == "windows" and
+          flip_w["mode"] == "direct" and
+          flip_w["benchmark_mode"] == "live_blackbox" and
+          flip_w["runtime_comparison"]["include_container"] is False and
+          flip_w["runtime_comparison"]["include_windows"] is True)
+    check("runtime comparison artifact schema is v2",
+          RC.SCHEMA_VERSION == 2, "v%d" % RC.SCHEMA_VERSION)
 
     # -- runtime comparison (fast, no external toolchains) ----------------
     rc_def = C.normalize({})["runtime_comparison"]
@@ -217,6 +259,49 @@ def main():
           [x for x in r["adjudication"]["slo"]
            if x["id"] == "S7"][0]["grade"] in ("PASS", "FAIL", "WARN"))
 
+    # The default Windows run must be genuinely client-only: no container,
+    # no cgroup samples, no full_server label, S5/S6 ungraded.
+    check("default run is Windows runtime",
+          r["config"]["runtime_environment"] == "windows",
+          r["config"]["runtime_environment"])
+    check("default run resolves no container",
+          not r["meta"]["container"] and not r.get("container"),
+          repr(r["meta"]["container"]))
+    check("default run collects zero cgroup samples",
+          (r["resources"]["cgroup_samples"] or 0) == 0,
+          "%s samples" % (r["resources"]["cgroup_samples"] or 0))
+    check("default run visibility is client_only",
+          r["visibility"] == "client_only" and
+          r["benchmark_mode"] == "live_blackbox",
+          "%s / %s" % (r["benchmark_mode"], r["visibility"]))
+    check("default run never labels resources full_server",
+          "full_server" not in json.dumps(r["per_metric_visibility"]),
+          str(r["per_metric_visibility"].get("metrics.resources.*")))
+    check("default run grades memory SLOs N/A",
+          all(x["grade"].startswith("N/A") for x in r["adjudication"]["slo"]
+              if x["id"] in ("S5", "S6")))
+    check("client-only run is refused by can_compare",
+          can_compare(r, r)[0] is False)
+    hybrid = {"benchmark_mode": "live_blackbox", "container": "stale-app",
+              "resources": {"cgroup_samples": 50, "stats_samples": 10},
+              "series": {"cgroup_series": [{"anon_bytes": 123}]}}
+    ensure_current(hybrid, mode="live_blackbox")
+    check("live_blackbox pins client_only even with cgroup evidence",
+          hybrid["visibility"] == "client_only" and
+          hybrid["per_metric_visibility"]["metrics.resources.*"]
+          == "unavailable",
+          "%s / %s" % (hybrid["visibility"],
+                       hybrid["per_metric_visibility"]["metrics.resources.*"]))
+    archived = {"container": "old-app",
+                "meta": {"container": "old-app"},
+                "resources": {"cgroup_samples": 50},
+                "series": {"cgroup_series": [{"anon_bytes": 123}]}}
+    ensure_current(archived)
+    check("archived v1 Docker run stays full_server",
+          archived["benchmark_mode"] == "docker_lab" and
+          archived["visibility"] == "full_server",
+          "%s / %s" % (archived["benchmark_mode"], archived["visibility"]))
+
     check("report has no <script>", "<script" not in h.lower())
     check("report has no <link>", "<link" not in h.lower())
     check("report has no src=", "src=" not in h.lower())
@@ -226,6 +311,10 @@ def main():
     check("report has 10 sections", h.count("<h2>") == 10,
           "%d sections" % h.count("<h2>"))
     check("report embeds verdict", r["adjudication"]["verdict"] in h)
+    check("report discloses Windows client-only mode",
+          "Windows runtime mode" in h and "client-only run" in h)
+    check("report records the runtime environment setting",
+          "windows / live_blackbox" in h)
     check("report size sane", len(h) > 15000, "%d bytes" % len(h))
 
     # A real run WITH the comparison must gain exactly one extra section and
@@ -251,8 +340,16 @@ def main():
                "report.html", "stage2_verdict.json", "status.json")))
 
     # -- cgroup-backed grading path (synthetic evidence) -------------------
+    # The base result is a Windows client-only run. This synthetic case models
+    # a Docker lab run, so flip the switch too: grading.grade() now refuses to
+    # grade S5/S6 from client-only runs even when cgroup fields are injected.
     fake = json.loads(json.dumps(r))
     fake["abort"] = {"flag": False, "reason": "", "at_s": None, "phase": ""}
+    fake["config"]["runtime_environment"] = "docker"
+    fake["config"]["benchmark_mode"] = "docker_lab"
+    fake["config"]["mode"] = "auto"
+    fake["benchmark_mode"] = "docker_lab"
+    fake["visibility"] = "full_server"
     fake["meta"]["container"] = "synthetic-app"
     fake["config"]["slo"]["max_memory_growth_mib"] = 256.0
     fake["config"]["slo"]["max_retained_pct"] = 120.0

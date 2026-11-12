@@ -21,6 +21,32 @@ from .util import atomic_json
 # fairness controls, browser metrics and generator isolation flags.
 SCHEMA_VERSION = 2
 
+# The exclusive "runtime environment" switch: one source of truth for (a) which
+# installed runtimes the language load check runs in and (b) which vantage
+# point the HTTP load test measures from. Windows is the DEFAULT.
+RUNTIME_ENVIRONMENTS = ("windows", "docker")
+RUNTIME_ENVIRONMENT_LABELS = {
+    "windows": "Windows (installed runtimes)",
+    "docker": "Docker (container)",
+}
+# Coherent defaults applied together when the switch changes. Keeping them in
+# one table prevents half-configured states (e.g. Windows mode still resolving
+# a container, or Docker mode publishing client_only results).
+RUNTIME_ENVIRONMENT_DEFAULTS = {
+    "windows": {
+        "mode": "direct",                   # no Docker cgroup instrumentation
+        "benchmark_mode": "live_blackbox",  # honest client_only visibility
+        "include_container": False,         # no Spid3r-in-Docker variants
+        "include_windows": True,            # check installed host toolchains
+    },
+    "docker": {
+        "mode": "auto",
+        "benchmark_mode": "auto",           # docker_lab when a container resolves
+        "include_container": True,          # measure the deployed binary
+        "include_windows": True,            # host baselines keep ratios honest
+    },
+}
+
 
 # ------------------------------------------------------------------ phases --
 def phase(name, label, duration_s, concurrency=0, steps=None,
@@ -103,10 +129,11 @@ PRESETS = {
 # ---------------------------------------------------------------- defaults --
 DEFAULTS = {
     "schema_version": SCHEMA_VERSION,
+    "runtime_environment": "windows",  # windows (default) | docker; exclusive
     "target_url": "http://localhost:8090/",
     "container": "",                 # empty => auto-detect from published port
     "mysql_container": "",           # empty => no MySQL sampler
-    "mode": "auto",                  # auto | docker | direct
+    "mode": "direct",                # set by runtime_environment; advanced override
     "profile": "quick",
     "health_path": "/health",
     "paths": [{"path": "/", "weight": 100}],
@@ -120,7 +147,7 @@ DEFAULTS = {
     "reprobe_s": 15,                # post-abort 1 Hz availability re-probe
     "phases": quick_phases(),
     # --- v2: identity, comparability and future multi-language campaigns ---
-    "benchmark_mode": "auto",       # auto | docker_lab | live_blackbox | instrumented_live
+    "benchmark_mode": "live_blackbox",  # set by runtime_environment; advanced override
     "target": {                     # metadata about the SITE, not the host
         "site_id": "", "group": "", "language": "", "runtime_version": "",
         "framework": "", "framework_version": "", "image": "",
@@ -142,12 +169,15 @@ DEFAULTS = {
     "browser": {"enabled": False, "cdp_url": "http://127.0.0.1:9222"},
     "runtime_adapter": {"type": "", "endpoint": "/__hlc/runtime"},
     # Cross-language runtime comparison. Enabled by default so EVERY run also
-    # produces runtime_comparison.json + runtime_comparison.html.
+    # produces runtime_comparison.json + runtime_comparison.html. The Windows
+    # default checks installed host toolchains only; the Docker option adds the
+    # deployed Spid3r binary inside the container.
     "runtime_comparison": {
         "enabled": True,
         "repeats": 5,                 # median of N in-process repeats
         "container": "",              # "" => config.container / auto-resolve
-        "include_container": True,    # also run Spid3r inside Docker
+        "include_windows": True,      # installed host runtimes (checked by default)
+        "include_container": False,   # Docker variants: off unless Docker is chosen
         "include_native": True,       # spid3r build --release variant
         "include_references": True,   # Node / Rust reference rows
         "write_sources": True,        # keep generated programs in sources/
@@ -200,6 +230,34 @@ def apply_profile(cfg, name):
     return normalize(out)
 
 
+def apply_runtime_environment(cfg, env):
+    """Apply the exclusive runtime switch as one coherent preset.
+
+    ``windows`` (the default) load-checks installed host toolchains and runs
+    the HTTP test in direct / client-only mode. ``docker`` keeps those host
+    baselines (they are the measuring stick) and additionally instruments the
+    container's cgroups and its deployed Spid3r binary.
+
+    Always use this helper instead of setting ``runtime_environment`` alone:
+    a saved config carries explicit derived keys, so changing just the switch
+    would otherwise leave a half-configured state.
+    """
+    env = str(env or "").strip().lower()
+    if env not in RUNTIME_ENVIRONMENTS:
+        raise ValueError("runtime_environment must be one of %s"
+                         % ", ".join(RUNTIME_ENVIRONMENTS))
+    out = {k: v for k, v in (cfg or {}).items() if not k.startswith("_")}
+    out["runtime_environment"] = env
+    preset = RUNTIME_ENVIRONMENT_DEFAULTS[env]
+    out["mode"] = preset["mode"]
+    out["benchmark_mode"] = preset["benchmark_mode"]
+    rc = dict(out.get("runtime_comparison") or {})
+    rc["include_container"] = preset["include_container"]
+    rc["include_windows"] = preset["include_windows"]
+    out["runtime_comparison"] = rc
+    return public_config(normalize(out))
+
+
 def _deep_merge(base, over):
     out = copy.deepcopy(base)
     for k, v in (over or {}).items():
@@ -218,6 +276,37 @@ def normalize(cfg):
     # v1 configs carry a key that was never implemented; drop it so it does
     # not leak into new result documents.
     out.pop("follow_redirects", None)
+
+    # --- exclusive runtime environment switch -------------------------------
+    # Infer once for configs that predate the switch: an existing Docker lab /
+    # container setup keeps working instead of being silently reclassified as
+    # Windows. A fresh config (no key at all) defaults to Windows.
+    raw_rc = raw.get("runtime_comparison") or {}
+    if "runtime_environment" not in raw:
+        legacy_docker = (bool(raw_rc.get("include_container"))
+                         or str(raw.get("benchmark_mode")) in
+                         ("docker_lab", "instrumented_live")
+                         or str(raw.get("mode")) == "docker")
+        env = "docker" if legacy_docker else "windows"
+    else:
+        env = str(raw["runtime_environment"] or "windows").strip().lower()
+    if env not in RUNTIME_ENVIRONMENTS:
+        env = "windows"          # self-heal a typo; never silently enable Docker
+    out["runtime_environment"] = env
+    preset = RUNTIME_ENVIRONMENT_DEFAULTS[env]
+    # Derived keys are only defaulted when the caller did not set them, so
+    # advanced overrides (--mode / --benchmark-mode) remain usable. Every real
+    # switch change goes through apply_runtime_environment(), which rewrites
+    # all four keys together - saved configs always carry them explicitly.
+    if "mode" not in raw:
+        out["mode"] = preset["mode"]
+    if "benchmark_mode" not in raw:
+        out["benchmark_mode"] = preset["benchmark_mode"]
+    if "include_container" not in raw_rc:
+        out["runtime_comparison"]["include_container"] = preset["include_container"]
+    if "include_windows" not in raw_rc:
+        out["runtime_comparison"]["include_windows"] = preset["include_windows"]
+
     if str(out["benchmark_mode"]) not in (
             "auto", "docker_lab", "live_blackbox", "instrumented_live"):
         raise ValueError("benchmark_mode must be auto, docker_lab, "
@@ -335,7 +424,8 @@ def normalize(cfg):
     rc = out["runtime_comparison"] or {}
     rc["enabled"] = bool(rc.get("enabled", True))
     rc["repeats"] = max(1, min(20, int(rc.get("repeats", 5))))
-    rc["include_container"] = bool(rc.get("include_container", True))
+    rc["include_windows"] = bool(rc.get("include_windows", True))
+    rc["include_container"] = bool(rc.get("include_container", False))
     rc["include_native"] = bool(rc.get("include_native", True))
     rc["include_references"] = bool(rc.get("include_references", True))
     rc["write_sources"] = bool(rc.get("write_sources", True))

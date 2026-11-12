@@ -108,9 +108,19 @@ class SamplerSet:
 
     def __init__(self, cfg, container="", mysql_container="", log=None, t0=None):
         self.cfg = cfg
+        self.log = log
+        self.client_only = str((cfg or {}).get("runtime_environment") or "").strip().lower() == "windows"
         self.container = container or ""
         self.mysql_container = mysql_container or ""
-        self.log = log
+        if self.client_only:
+            # Windows runtime is client-only: no server CPU / cgroup memory /
+            # PSI / OOM collectors may run, regardless of the container names
+            # passed in. Clear them so every docker-gated thread stays off.
+            self.container = ""
+            self.mysql_container = ""
+            if self.log:
+                self.log.add("Windows runtime mode: server-side collectors "
+                             "disabled (client-only run).")
         self.t0 = t0 if t0 is not None else time.perf_counter()
         self.stop_evt = threading.Event()
         self.lock = threading.Lock()
@@ -141,6 +151,8 @@ class SamplerSet:
     # ------------------------------------------------------------ cgroup --
     def _cgroup_stream(self):
         """Single low-overhead collector process; PROCJSON -> proc series."""
+        if self.client_only:
+            return
         if not self.container:
             return
         period = float(self.cfg.get("sample_period_s") or 1.0)
@@ -184,6 +196,8 @@ class SamplerSet:
 
     # ------------------------------------------------------- docker stats --
     def _stats_poller(self):
+        if self.client_only:
+            return
         if not self.container:
             return                      # direct mode: no docker stats needed
         period = max(0.5, float(self.cfg.get("stats_period_s", 4)))
@@ -204,6 +218,8 @@ class SamplerSet:
 
     # -------------------------------------------------------------- mysql --
     def _mysql_stream(self):
+        if self.client_only:
+            return
         if not self.mysql_container:
             return
         script = mysql_loop_script(10)
