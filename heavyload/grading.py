@@ -65,15 +65,22 @@ def grade(results):
         "classified separately and excluded.")
 
     # S2 / S3 - tail latency ------------------------------------------------
-    g2 = _grade_fail_warn(lat["p95"], slo_cfg["max_p95_ms"])
+    # A percentile computed over zero successful responses is not evidence:
+    # 0.00 ms would grade as a fake PASS, so grade N/A instead.
+    no_200 = not lat.get("n")
+    g2 = "N/A" if no_200 else _grade_fail_warn(lat["p95"], slo_cfg["max_p95_ms"])
     add("S2", "Successful-200 p95 latency",
         "<= %.0f ms" % slo_cfg["max_p95_ms"],
-        "%.2f ms (n=%d, p50=%.2f ms)" % (lat["p95"], lat["n"], lat["p50"]),
+        ("no successful HTTP 200 responses (n=0); latency not measurable"
+         if no_200 else
+         "%.2f ms (n=%d, p50=%.2f ms)" % (lat["p95"], lat["n"], lat["p50"])),
         g2, "Measured on HTTP 200 responses only.")
-    g3 = _grade_fail_warn(lat["p99"], slo_cfg["max_p99_ms"])
+    g3 = "N/A" if no_200 else _grade_fail_warn(lat["p99"], slo_cfg["max_p99_ms"])
     add("S3", "Successful-200 p99 latency",
         "<= %.0f ms" % slo_cfg["max_p99_ms"],
-        "%.2f ms (max=%.2f ms)" % (lat["p99"], lat["max"]), g3,
+        ("no successful HTTP 200 responses (n=0); latency not measurable"
+         if no_200 else
+         "%.2f ms (max=%.2f ms)" % (lat["p99"], lat["max"])), g3,
         "Tail saturation is the primary capacity signal under heavy load.")
 
     # S4 - throughput -------------------------------------------------------
@@ -186,11 +193,24 @@ def grade(results):
     restarts = _as_int(after.get("restart_count")) - _as_int(before.get("restart_count"))
     oom = r.get("oom_kill_events") or 0
     unstable = bool(oom or restarts > 0 or str(after.get("oom_killed")) == "true")
+    # Only claim stability when something could actually observe it. Without
+    # docker inspect data or cgroup samples, "no OOM seen" is an absence of
+    # observation, not evidence — grade N/A instead of a fake PASS.
+    stability_observed = (not client_only
+                          and (bool(before) or bool(after)
+                               or (r.get("cgroup_samples") or 0) > 0))
     add("S8", "No OOM kill / restart",
         "0 OOM kills, 0 restarts",
-        "oom_kill=%d, restart delta=%d, state=%s, PSI max=%s"
-        % (oom, restarts, after.get("state", "?"), r.get("psi_max_avg10")),
-        "FAIL" if unstable else "PASS")
+        ("no process/container instrumentation in this run; stability is not "
+         "observable from the client side"
+         if not stability_observed else
+         "oom_kill=%d, restart delta=%d, state=%s, PSI max=%s"
+         % (oom, restarts, after.get("state", "?"), r.get("psi_max_avg10"))),
+        ("N/A" if not stability_observed else
+         ("FAIL" if unstable else "PASS")),
+        "" if stability_observed else
+        "Switch the Runtime environment to Docker to grade container "
+        "stability.")
 
     # S9 - schedule completion ----------------------------------------------
     add("S9", "Full schedule completed", "no guardrail abort",
@@ -360,8 +380,10 @@ def grade(results):
         "/ transport failures, %d connect errors)."
         % (s["total_requests"], s["overall_rps"], err_pct, s["s1_errors"],
            s["connect_errors"]),
-        "Successful-200 latency p50 %.2f ms / p95 %.2f ms / p99 %.2f ms / "
-        "max %.2f ms." % (lat["p50"], lat["p95"], lat["p99"], lat["max"]),
+        ("No successful HTTP 200 responses were received; latency percentiles "
+         "are N/A, not zero." if no_200 else
+         "Successful-200 latency p50 %.2f ms / p95 %.2f ms / p99 %.2f ms / "
+         "max %.2f ms." % (lat["p50"], lat["p95"], lat["p99"], lat["max"])),
     ]
     if r.get("anon_peak_mib") is not None:
         ex.append("Canonical cgroup %s: start %.1f MiB, peak %.1f MiB, end %.1f "
@@ -385,6 +407,11 @@ def grade(results):
                   "trigger itself, but NOT for sustained growth, cooldown "
                   "retention, attribution or repeat-pass decisions."
                   % (abort.get("at_s"), abort.get("phase")))
+    elif no_200:
+        ex.append("The schedule completed, but the target returned no "
+                  "successful responses during the entire run; latency, "
+                  "throughput and capacity conclusions cannot be drawn from "
+                  "this run.")
     else:
         ex.append("Full schedule completed; sustained growth, cooldown retention "
                   "and availability evidence are usable.")

@@ -30,15 +30,19 @@ import html
 import json
 import math
 import os
+import random
+import re
 import shutil
 import statistics
 import subprocess
 import sys
+import platform
 import tempfile
 import time
 from datetime import datetime, timezone
 
 from .util import atomic_json, utc
+from . import util
 
 # v2 adds runtime_environment / config_meta flags and a "source" tag per
 # variant row. Old v1 documents still render (every new field has a default),
@@ -56,7 +60,7 @@ DEFAULT_OPTIONS = {
     "include_references": True,
     "write_sources": True,
     "timeout_s": 300,
-    "workloads": ["prime", "json", "map"],
+    "workloads": ["prime", "json", "map", "text", "matmul"],
 }
 
 RUNTIME_ENVIRONMENT_LABELS = {
@@ -69,11 +73,15 @@ RUNTIME_ENVIRONMENT_LABELS = {
 PRIME_N = 50000
 JSON_ROWS, JSON_ROUNDS = 200, 600
 MAP_KEYS, MAP_ROUNDS = 64, 100000
+TEXT_ROWS = 50000
+MATMUL_N = 128
 
 EXPECTED = {
     "prime": "RESULT 5133 121013308",
     "json": "RESULT 249868800 9163",
     "map": "RESULT 44432313 100000",
+    "text": "RESULT 1295428 300465975",
+    "matmul": "RESULT -1985 -40",
 }
 
 WORKLOAD_INFO = {
@@ -103,6 +111,26 @@ WORKLOAD_INFO = {
                        "lookups with a freshly constructed key each time. "
                        "Mirrors route / config / session lookups.",
         "expected": EXPECTED["map"],
+    },
+    "text": {
+        "id": "D",
+        "title": "Text template building (string churn / allocation)",
+        "constants": "50,000 template rows",
+        "description": "Build a user-record template string per row (number "
+                       "formatting, concatenation, length measurement) with a "
+                       "rolling hash over string lengths. Exercises string "
+                       "allocation and GC pressure, like log/report generation.",
+        "expected": EXPECTED["text"],
+    },
+    "matmul": {
+        "id": "E",
+        "title": "Integer matrix multiply (numeric loops / indexing)",
+        "constants": "128 x 128 integer matrices",
+        "description": "Classic i-k-j matmul with a transposed B (built untimed) "
+                       "so every language multiplies row-by-row. Integer-only "
+                       "arithmetic keeps checksums exact across languages. "
+                       "Exercises nested indexing and tight numeric loops.",
+        "expected": EXPECTED["matmul"],
     },
 }
 
@@ -377,13 +405,307 @@ echo "RESULT $acc 100000\n";
 echo "TIME_US $us\n";
 """
 
+# Rust uses its native std HashMap, exactly like the other runtimes use their
+# native dicts/arrays — same "native container" comparison level. (Workload B
+# has no Rust source on purpose: Rust's stdlib ships no JSON serializer, and a
+# hand-rolled parser would NOT be the native-serializer comparison B measures.)
+MAP_RS = r"""use std::collections::HashMap;
+use std::time::Instant;
+fn main() {
+    let mut t: HashMap<String, i64> = HashMap::new();
+    for i in 0..64i64 {
+        t.insert(format!("k{}", i), (i * 37 + 11) % 997);
+    }
+    let t0 = Instant::now();
+    let mut acc: i64 = 0;
+    for r in 0..100000i64 {
+        acc += t[&format!("k{}", r % 64)];
+    }
+    let us = t0.elapsed().as_micros();
+    println!("RESULT {} 100000", acc);
+    println!("TIME_US {}", us);
+}
+"""
+
+# --------------------------------------------------------------------------
+# Workload D: text template building (string churn / allocation pressure)
+# --------------------------------------------------------------------------
+TEXT_MATRIX = r"""fn main() {
+    let t0 = now_ms();
+    let total_chars = 0;
+    let acc = 0;
+    let i = 0;
+    while i < 50000 {
+        let s = "user:" + string(i) + "|score:" + string((i * 37) % 100)
+              + "|tag:t" + string(i % 13);
+        total_chars = total_chars + s.len();
+        acc = (acc * 31 + s.len()) % 1000000007;
+        i += 1;
+    }
+    let us = (now_ms() - t0) * 1000;
+    println("RESULT " + string(total_chars) + " " + string(acc));
+    println("TIME_US " + string(us));
+    return 0;
+}
+"""
+
+TEXT_PY = r"""import time
+ROWS = 50000
+t0 = time.perf_counter_ns()
+total_chars = 0
+acc = 0
+for i in range(ROWS):
+    s = ("user:" + str(i) + "|score:" + str((i * 37) % 100)
+         + "|tag:t" + str(i % 13))
+    total_chars += len(s)
+    acc = (acc * 31 + len(s)) % 1000000007
+us = (time.perf_counter_ns() - t0) // 1000
+print("RESULT", total_chars, acc)
+print("TIME_US", us)
+"""
+
+TEXT_JS = r"""const ROWS = 50000;
+const t0 = process.hrtime.bigint();
+let totalChars = 0, acc = 0;
+for (let i = 0; i < ROWS; i++) {
+  const s = "user:" + i + "|score:" + ((i * 37) % 100) + "|tag:t" + (i % 13);
+  totalChars += s.length;
+  acc = (acc * 31 + s.length) % 1000000007;
+}
+const us = Number((process.hrtime.bigint() - t0) / 1000n);
+console.log("RESULT " + totalChars + " " + acc);
+console.log("TIME_US " + us);
+"""
+
+TEXT_PHP = r"""<?php
+$ROWS = 50000;
+$t0 = hrtime(true);
+$total_chars = 0;
+$acc = 0;
+for ($i = 0; $i < $ROWS; $i++) {
+    $s = "user:" . $i . "|score:" . (($i * 37) % 100) . "|tag:t" . ($i % 13);
+    $total_chars += strlen($s);
+    $acc = ($acc * 31 + strlen($s)) % 1000000007;
+}
+$us = intdiv(hrtime(true) - $t0, 1000);
+echo "RESULT $total_chars $acc\n";
+echo "TIME_US $us\n";
+"""
+
+TEXT_RS = r"""use std::time::Instant;
+fn main() {
+    let rows: i64 = 50000;
+    let t0 = Instant::now();
+    let mut total_chars: i64 = 0;
+    let mut acc: i64 = 0;
+    let mut i: i64 = 0;
+    while i < rows {
+        let s = format!("user:{}|score:{}|tag:t{}", i, (i * 37) % 100, i % 13);
+        total_chars += s.len() as i64;
+        acc = (acc * 31 + s.len() as i64) % 1000000007;
+        i += 1;
+    }
+    let us = t0.elapsed().as_micros();
+    println!("RESULT {} {}", total_chars, acc);
+    println!("TIME_US {}", us);
+}
+"""
+
+# --------------------------------------------------------------------------
+# Workload E: integer matrix multiply (numeric loops, nested indexing)
+# Transposed B is built UNTIMED so every language multiplies the same way:
+# C[i][k] = sum_j A[i][j] * Bt[k][j]. Integer-only, so checksums are exact.
+# --------------------------------------------------------------------------
+MATMUL_MATRIX = r"""fn build_a(n: int) {
+    let a = list();
+    let i = 0;
+    while i < n {
+        let row = list();
+        let j = 0;
+        while j < n {
+            row.push((i * 7 + j * 13) % 19 - 9);
+            j += 1;
+        }
+        a.push(row);
+        i += 1;
+    }
+    return a;
+}
+fn build_bt(n: int) {
+    let bt = list();
+    let k = 0;
+    while k < n {
+        let row = list();
+        let j = 0;
+        while j < n {
+            row.push((k * 11 + j * 3) % 17 - 8);
+            j += 1;
+        }
+        bt.push(row);
+        k += 1;
+    }
+    return bt;
+}
+fn main() {
+    let n = 128;
+    let a = build_a(n);
+    let bt = build_bt(n);
+    let t0 = now_ms();
+    let total = 0;
+    let diag = 0;
+    let i = 0;
+    while i < n {
+        let ai = a[i];
+        let k = 0;
+        while k < n {
+            let btk = bt[k];
+            let s = 0;
+            let j = 0;
+            while j < n {
+                s = s + ai[j] * btk[j];
+                j += 1;
+            }
+            total = total + s;
+            if i == k { diag = diag + s; }
+            k += 1;
+        }
+        i += 1;
+    }
+    let us = (now_ms() - t0) * 1000;
+    println("RESULT " + string(total) + " " + string(diag));
+    println("TIME_US " + string(us));
+    return 0;
+}
+"""
+
+MATMUL_PY = r"""import time
+N = 128
+A = [[(i * 7 + j * 13) % 19 - 9 for j in range(N)] for i in range(N)]
+Bt = [[(k * 11 + j * 3) % 17 - 8 for j in range(N)] for k in range(N)]
+t0 = time.perf_counter_ns()
+total = 0
+diag = 0
+i = 0
+while i < N:
+    Ai = A[i]
+    k = 0
+    while k < N:
+        Btk = Bt[k]
+        s = 0
+        j = 0
+        while j < N:
+            s += Ai[j] * Btk[j]
+            j += 1
+        total += s
+        if i == k:
+            diag += s
+        k += 1
+    i += 1
+us = (time.perf_counter_ns() - t0) // 1000
+print("RESULT", total, diag)
+print("TIME_US", us)
+"""
+
+MATMUL_JS = r"""const N = 128;
+const A = [], Bt = [];
+for (let i = 0; i < N; i++) {
+  A.push([]);
+  for (let j = 0; j < N; j++) A[i].push((i * 7 + j * 13) % 19 - 9);
+}
+for (let k = 0; k < N; k++) {
+  Bt.push([]);
+  for (let j = 0; j < N; j++) Bt[k].push((k * 11 + j * 3) % 17 - 8);
+}
+const t0 = process.hrtime.bigint();
+let total = 0, diag = 0;
+for (let i = 0; i < N; i++) {
+  const Ai = A[i];
+  for (let k = 0; k < N; k++) {
+    const Btk = Bt[k];
+    let s = 0;
+    for (let j = 0; j < N; j++) s += Ai[j] * Btk[j];
+    total += s;
+    if (i === k) diag += s;
+  }
+}
+const us = Number((process.hrtime.bigint() - t0) / 1000n);
+console.log("RESULT " + total + " " + diag);
+console.log("TIME_US " + us);
+"""
+
+MATMUL_PHP = r"""<?php
+$N = 128;
+$A = [];
+$Bt = [];
+for ($i = 0; $i < $N; $i++) {
+    $row = [];
+    for ($j = 0; $j < $N; $j++) $row[] = ($i * 7 + $j * 13) % 19 - 9;
+    $A[] = $row;
+}
+for ($k = 0; $k < $N; $k++) {
+    $row = [];
+    for ($j = 0; $j < $N; $j++) $row[] = ($k * 11 + $j * 3) % 17 - 8;
+    $Bt[] = $row;
+}
+$t0 = hrtime(true);
+$total = 0;
+$diag = 0;
+for ($i = 0; $i < $N; $i++) {
+    $Ai = $A[$i];
+    for ($k = 0; $k < $N; $k++) {
+        $Btk = $Bt[$k];
+        $s = 0;
+        for ($j = 0; $j < $N; $j++) $s += $Ai[$j] * $Btk[$j];
+        $total += $s;
+        if ($i === $k) $diag += $s;
+    }
+}
+$us = intdiv(hrtime(true) - $t0, 1000);
+echo "RESULT $total $diag\n";
+echo "TIME_US $us\n";
+"""
+
+MATMUL_RS = r"""use std::time::Instant;
+fn main() {
+    let n: usize = 128;
+    let mut a: Vec<Vec<i64>> = vec![vec![0i64; n]; n];
+    let mut bt: Vec<Vec<i64>> = vec![vec![0i64; n]; n];
+    for i in 0..n {
+        for j in 0..n { a[i][j] = (i as i64 * 7 + j as i64 * 13) % 19 - 9; }
+    }
+    for k in 0..n {
+        for j in 0..n { bt[k][j] = (k as i64 * 11 + j as i64 * 3) % 17 - 8; }
+    }
+    let t0 = Instant::now();
+    let mut total: i64 = 0;
+    let mut diag: i64 = 0;
+    for i in 0..n {
+        let ai = &a[i];
+        for k in 0..n {
+            let btk = &bt[k];
+            let mut s: i64 = 0;
+            for j in 0..n { s += ai[j] * btk[j]; }
+            total += s;
+            if i == k { diag += s; }
+        }
+    }
+    let us = t0.elapsed().as_micros();
+    println!("RESULT {} {}", total, diag);
+    println!("TIME_US {}", us);
+}
+"""
+
 SOURCES = {
     "prime": {"matrix": PRIME_MATRIX, "py": PRIME_PY, "js": PRIME_JS,
               "php": PRIME_PHP, "rs": PRIME_RS},
     "json": {"matrix": JSON_MATRIX, "py": JSON_PY, "js": JSON_JS,
              "php": JSON_PHP},
     "map": {"matrix": MAP_MATRIX, "py": MAP_PY, "js": MAP_JS,
-            "php": MAP_PHP},
+            "php": MAP_PHP, "rs": MAP_RS},
+    "text": {"matrix": TEXT_MATRIX, "py": TEXT_PY, "js": TEXT_JS,
+             "php": TEXT_PHP, "rs": TEXT_RS},
+    "matmul": {"matrix": MATMUL_MATRIX, "py": MATMUL_PY, "js": MATMUL_JS,
+               "php": MATMUL_PHP, "rs": MATMUL_RS},
 }
 
 BASELINE_KEYS = ("php", "python", "node", "rust")
@@ -423,6 +745,32 @@ def _first_line(text):
     return ""
 
 
+# Box-drawing / block characters used by ASCII-art banners (Spid3r prints a
+# figlet-style "SPID3R" logo ahead of its version line). A banner line must
+# never reach a version string, a variant label or an HTML table cell.
+_BANNER_CHARS = set("█▀▄▌▐░▒▓╗╔╝╚║═╦╩╠╣╬╭╮╯╰─│┤├┬┴┼╒╕╘╛╞╡")
+_VERSION_RE = re.compile(r"(\d+\.\d+(?:\.\d+)?)")
+
+
+def _clean_version(text):
+    """Return a bare 'x.y[.z]' version from tool output, skipping banners.
+
+    Spid3r's ``--version`` output is: empty line, ASCII-art banner, blank
+    lines, then fields like "Version       1.1.1". The first banner-safe line
+    containing a version number wins; "" when none exists (never guessed).
+    """
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if any(ch in _BANNER_CHARS for ch in line):
+            continue
+        m = _VERSION_RE.search(line)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def _parse_output(out):
     """Return (result_line, compute_ms) or (None, None)."""
     lines = [x.strip() for x in (out or "").strip().splitlines() if x.strip()]
@@ -450,6 +798,103 @@ def geo(values):
     if not values:
         return None
     return math.exp(sum(math.log(v) for v in values) / len(values))
+
+
+# --------------------------------------------------------------------------
+# Measurement statistics
+# Aligned with common benchmark-reporting practice (SPEC-style repeated runs,
+# medians with dispersion, ISO/IEC 80000-3 time units):
+#   * median of N repeats is the reported value (robust to outliers)
+#   * dispersion is always published: mean, sample stdev, CV%, IQR, min/max
+#   * a 95% confidence interval accompanies both mean (t-based) and median
+#     (deterministic bootstrap, percentile method)
+#   * every measurement-quality flag is visible in the report, never hidden
+# --------------------------------------------------------------------------
+_T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447,
+        7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179,
+        13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101,
+        19: 2.093, 20: 2.086, 25: 2.060, 30: 2.042}
+
+_NOISY_CV_PCT = 15.0        # CV above this = run-to-run noise is material
+_TIMER_FLOOR_MS = 10.0      # < 10 ms on a 1 ms timer = >10% quantization error
+
+
+def _t95(df):
+    """Two-sided 95% t critical value for df degrees of freedom."""
+    if df in _T95:
+        return _T95[df]
+    if df > 30:
+        return 1.96
+    # between tabulated points: conservative (take the next-larger df entry)
+    below = max(k for k in _T95 if k <= df)
+    return _T95[below]
+
+
+def row_stats(runs_ms, group=""):
+    """Compute the published statistics for one variant's repeat runs.
+
+    Deterministic: the bootstrap uses a fixed seed, so re-running the report
+    over the same raw data always yields identical numbers.
+    """
+    runs = sorted(x for x in runs_ms if isinstance(x, (int, float)))
+    n = len(runs)
+    if not n:
+        return {"n": 0}
+    med = statistics.median(runs)
+    mean = statistics.fmean(runs)
+    stdev = statistics.stdev(runs) if n >= 2 else 0.0
+    cv = (stdev / mean * 100.0) if mean > 0 else None
+    if n >= 4:
+        q = statistics.quantiles(runs, n=4, method="inclusive")
+        q1, q3 = q[0], q[2]
+    else:
+        q1 = runs[0]
+        q3 = runs[-1]
+    iqr = q3 - q1
+    # 95% CI of the mean (t-based, normal-theory; honest for small n)
+    if n >= 2 and mean > 0:
+        half = _t95(n - 1) * stdev / math.sqrt(n)
+        mean_lo, mean_hi = mean - half, mean + half
+    else:
+        mean_lo = mean_hi = None
+    # 95% CI of the median (percentile bootstrap, 2000 resamples, fixed seed)
+    rng = random.Random(20261120)
+    if n >= 2:
+        meds = []
+        for _ in range(2000):
+            sample = [rng.choice(runs) for _ in range(n)]
+            meds.append(statistics.median(sample))
+        meds.sort()
+        med_lo = meds[int(0.025 * len(meds))]
+        med_hi = meds[min(len(meds) - 1, int(0.975 * len(meds)))]
+    else:
+        med_lo = med_hi = None
+    flags = []
+    if n < 5:
+        flags.append("few-repeats (n=%d; >=5 recommended)" % n)
+    if cv is not None and cv > _NOISY_CV_PCT:
+        flags.append("noisy (CV %.1f%% > %.0f%%)" % (cv, _NOISY_CV_PCT))
+    if group == "spid3r" and med < _TIMER_FLOOR_MS:
+        flags.append("timer floor (median %.2f ms near the 1 ms now_ms "
+                     "resolution)" % med)
+    return {
+        "n": n,
+        "median_ms": round(med, 3),
+        "mean_ms": round(mean, 3),
+        "stdev_ms": round(stdev, 3),
+        "cv_pct": round(cv, 2) if cv is not None else None,
+        "q1_ms": round(q1, 3),
+        "q3_ms": round(q3, 3),
+        "iqr_ms": round(iqr, 3),
+        "min_ms": round(runs[0], 3),
+        "max_ms": round(runs[-1], 3),
+        "mean_ci95": [round(mean_lo, 3), round(mean_hi, 3)]
+        if mean_lo is not None else None,
+        "median_ci95": [round(med_lo, 3), round(med_hi, 3)]
+        if med_lo is not None else None,
+        "flags": flags,
+        "stable": not flags,
+    }
 
 
 def resolve_container(cfg, explicit=""):
@@ -480,7 +925,9 @@ def detect_tools(cfg, opts):
     for key, cmd in probes:
         rc, out, err, _ = _call(cmd, timeout=20)
         tools[key] = {"available": rc == 0,
-                      "version": _first_line(out) if rc == 0 else ""}
+                      "version": (_clean_version(out) if key == "spid3r"
+                                  else _first_line(out)) if rc == 0 else "",
+                      "path": (shutil.which(cmd[0]) or "") if rc == 0 else ""}
         if rc != 0 and key != "rustc":
             tools.setdefault("_errors", {})[key] = _first_line(err)
 
@@ -495,7 +942,7 @@ def detect_tools(cfg, opts):
             ["docker", "exec", container, "spid3r", "--version"], timeout=30)
         tools["container"] = {
             "available": rc == 0, "name": container,
-            "version": _first_line(out) if rc == 0 else "",
+            "version": _clean_version(out) if rc == 0 else "",
             "spid3r": rc == 0,
             "error": "" if rc == 0 else _first_line(err),
         }
@@ -527,7 +974,9 @@ def _build_artifacts(wid, stem, work, tools, opts, warnings, timeout):
             warnings.append("%s: %s build failed (%s)"
                             % (wid, label, _first_line(err) or _first_line(out)
                                or "rc=%s" % rc))
-    if wid == "prime" and tools.get("rustc", {}).get("available"):
+    # Rust reference variant: built for EVERY workload that ships a .rs
+    # source, so native-vs-interpreted comparisons cover the whole suite.
+    if "rs" in SOURCES.get(wid, {}) and tools.get("rustc", {}).get("available"):
         dest = stem + "_rs" + EXE
         rc, out, err, _ = _call(
             ["rustc", "-O", stem + ".rs", "-o", dest],
@@ -535,8 +984,8 @@ def _build_artifacts(wid, stem, work, tools, opts, warnings, timeout):
         if rc == 0 and os.path.isfile(os.path.join(work, dest)):
             built["rust"] = os.path.join(work, dest)
         else:
-            warnings.append("prime: rustc build failed (%s)"
-                            % (_first_line(err) or "rc=%s" % rc))
+            warnings.append("%s: rustc build failed (%s)"
+                            % (wid, _first_line(err) or "rc=%s" % rc))
     return built
 
 
@@ -668,7 +1117,8 @@ def run(cfg, out_dir, log=None, container=""):
             "constants_pinned": True,
             "prime_n": PRIME_N, "json_rows": JSON_ROWS,
             "json_rounds": JSON_ROUNDS, "map_keys": MAP_KEYS,
-            "map_rounds": MAP_ROUNDS, "repeats": repeats,
+            "map_rounds": MAP_ROUNDS, "text_rows": TEXT_ROWS,
+            "matmul_n": MATMUL_N, "repeats": repeats,
             "runtime_environment": runtime_env,
             "runtime_environment_label": env_label,
             "include_windows": want_windows,
@@ -707,6 +1157,21 @@ def run(cfg, out_dir, log=None, container=""):
             "node": tools["node"]["version"] or "not available",
             "rustc": tools.get("rustc", {}).get("version") or "not available",
             "platform": sys.platform,
+            "os": "%s (%s)" % (platform.system(), platform.release()),
+            "os_build": platform.platform(),
+            "cpu_model": (util.cpu_model() or platform.machine()
+                          or "not recorded"),
+            "cpu_count": os.cpu_count() or "not recorded",
+            "python_runner": sys.version.split()[0],
+            # Provenance: WHICH binary each label refers to. Multiple Node /
+            # PHP installs can coexist on PATH and resolve differently between
+            # shells, so the executable path is published alongside the
+            # version to keep runs comparable and auditable.
+            "spid3r_executable": tools["spid3r"].get("path", ""),
+            "php_executable": tools["php"].get("path", ""),
+            "python_executable": tools["python"].get("path", ""),
+            "node_executable": tools["node"].get("path", ""),
+            "rustc_executable": tools.get("rustc", {}).get("path", ""),
         }
         if not want_windows and not want_docker:
             warnings.append("Neither installed Windows runtimes nor Docker "
@@ -787,6 +1252,7 @@ def run(cfg, out_dir, log=None, container=""):
                     "compute_max_ms": round(max(comps), 3),
                     "wall_ms": round(statistics.median(walls), 2),
                     "compute_runs_ms": [round(x, 3) for x in comps],
+                    "stats": row_stats(comps, var["group"]),
                 })
             verified = len(rows) >= 2 and all(
                 r["result"] == info["expected"] for r in rows)
@@ -890,11 +1356,33 @@ def summarize_data(data):
                    "workload (%.2fx-%.2fx)." % (best, worst))
     else:
         verdict = "Spid3r matched or beat a baseline in at least one workload."
+    # Measurement-quality roll-up across all verified rows.
+    flagged, stable, worst_cv = [], 0, None
+    for w in (data.get("workloads") or {}).values():
+        for r in w.get("rows") or []:
+            st = r.get("stats") or {}
+            if st.get("flags"):
+                flagged.append("%s / %s: %s"
+                               % (w.get("id"), r.get("runtime"),
+                                  "; ".join(st["flags"])))
+            else:
+                stable += 1
+            cv = st.get("cv_pct")
+            if cv is not None and (worst_cv is None or cv > worst_cv):
+                worst_cv = cv
     return {
         "workloads_verified": len(by_wid),
         "workloads_total": len(data.get("workloads") or {}),
         "variants": sum(len(w["rows"]) for w in
                         (data.get("workloads") or {}).values()),
+        "quality": {
+            "stable_variants": stable,
+            "flagged_variants": len(flagged),
+            "flag_detail": flagged,
+            "worst_cv_pct": round(worst_cv, 2) if worst_cv is not None else None,
+            "thresholds": {"noisy_cv_pct": _NOISY_CV_PCT,
+                           "timer_floor_ms": _TIMER_FLOOR_MS},
+        },
         "slowdown_range": {"min": round(best, 3) if best else None,
                            "max": round(worst, 3) if worst else None},
         "slowdown": slowdown,
@@ -963,9 +1451,15 @@ tr.spid3r td{background:#fffaf7}tr.base td{background:#f5f9ff}
 .barrow{display:grid;grid-template-columns:250px 1fr 84px;gap:10px;align-items:center;
 margin-bottom:6px;font-size:12px}
 .barlabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bartrack{background:#eef1f6;border-radius:4px;height:15px;overflow:hidden}
-.barfill{height:100%;border-radius:4px}
+.bartrack{background:#eef1f6;border-radius:4px;height:15px;overflow:hidden;
+position:relative}
+.barrange{position:absolute;top:0;height:100%;background:rgba(27,36,52,.14)}
+.barfill{position:absolute;top:0;left:0;height:100%;border-radius:4px}
 .barval{text-align:right;font-family:var(--mono);color:var(--muted)}
+.qtag{font-size:10px;font-weight:700;border-radius:4px;padding:1px 6px;
+white-space:nowrap}
+.qok{color:#166534;background:#e8f7ee;border:1px solid #bfe8cf}
+.qwarn{color:#92400e;background:#fff4e0;border:1px solid #f3d19e}
 .srctag{font-size:10px;font-weight:700;color:#7c3aed;background:#f3e8ff;
 border:1px solid #ddd0fe;border-radius:4px;padding:1px 5px;margin-left:5px}
 ul{margin:6px 0 10px;padding-left:20px}li{margin-bottom:4px}
@@ -1037,6 +1531,16 @@ def build_html(data, out_path):
     P.append('<span class="badge">%s variants</span>' % _e(s.get("variants", 0)))
     repeats = (data.get("config_meta") or {}).get("repeats", 5)
     P.append('<span class="badge">median of %s repeats</span>' % _e(repeats))
+    q = s.get("quality") or {}
+    if q:
+        flagged = q.get("flagged_variants") or 0
+        stable = q.get("stable_variants") or 0
+        if flagged:
+            P.append('<span class="badge warn">quality: %d flagged / %d '
+                     'stable</span>' % (flagged, stable))
+        else:
+            P.append('<span class="badge ok">quality: %d/%d stable</span>'
+                     % (stable, stable + flagged))
     P.append("</header>")
 
     rng = s.get("slowdown_range") or {}
@@ -1064,10 +1568,18 @@ def build_html(data, out_path):
                     len(rows), "variant" if len(rows) == 1 else "variants"))
         P.append('<p>%s</p>' % _e(w.get("description")))
         if rows:
-            mx = max(r["compute_ms"] for r in rows) or 1
+            mx = max((r.get("stats") or {}).get("max_ms",
+                     r["compute_ms"]) for r in rows) or 1
             for r in rows:
                 color = {"spid3r": "#f85606", "baseline": "#2563eb",
                          "reference": "#94a3b8"}.get(r.get("group"), "#94a3b8")
+                st = r.get("stats") or {}
+                lo = st.get("min_ms", r["compute_ms"])
+                hi = st.get("max_ms", r["compute_ms"])
+                band = ('<div class="barrange" style="left:%.2f%%;width:%.2f%%">'
+                        "</div>" % (lo / mx * 100.0,
+                                    max(0.5, (hi - lo) / mx * 100.0))
+                        if hi > lo else "")
                 pct = max(1.0, r["compute_ms"] / mx * 100)
                 src = row_source(r, provenance_recorded=provenance_recorded)
                 if src == "docker":
@@ -1077,14 +1589,18 @@ def build_html(data, out_path):
                 else:
                     tag = ""
                 P.append('<div class="barrow"><div class="barlabel">%s%s</div>'
-                         '<div class="bartrack"><div class="barfill" '
+                         '<div class="bartrack">%s<div class="barfill" '
                          'style="width:%.1f%%;background:%s"></div></div>'
                          '<div class="barval">%s ms</div></div>'
-                         % (_e(r["runtime"]), tag, pct, color,
+                         % (_e(r["runtime"]), tag, band, pct, color,
                             _f(r["compute_ms"], 3)))
-            P.append("<table><thead><tr><th>Runtime / engine</th><th>Where</th>"
-                     "<th class=\"num\">Median ms</th><th class=\"num\">Min</th>"
-                     "<th class=\"num\">Max</th></tr></thead><tbody>")
+            P.append('<table><thead><tr><th>Runtime / engine</th><th>Where</th>'
+                     '<th class="num">Median</th>'
+                     '<th class="num">Mean &plusmn; CI95</th>'
+                     '<th class="num">Stdev</th><th class="num">CV%</th>'
+                     '<th class="num">IQR</th>'
+                     '<th class="num">Min</th><th class="num">Max</th>'
+                     "<th>Quality</th></tr></thead><tbody>")
             for r in rows:
                 cls = {"spid3r": " class=\"spid3r\"",
                        "baseline": " class=\"base\""}.get(r.get("group"), "")
@@ -1092,14 +1608,42 @@ def build_html(data, out_path):
                 where = ("Docker container" if src == "docker"
                          else "Windows host" if src == "windows"
                          else "unavailable (provenance not recorded)")
+                st = r.get("stats") or {}
+                mc = st.get("mean_ci95")
+                mean_ci = ("%s &plusmn; %s" % (_f(st.get("mean_ms"), 2),
+                           _f((mc[1] - mc[0]) / 2.0, 2)) if mc else "n/a")
+                cv = st.get("cv_pct")
+                if not st:
+                    q = '<span class="qtag qwarn">n/a (legacy data)</span>'
+                elif st.get("flags"):
+                    q = "".join('<span class="qtag qwarn">%s</span> '
+                                % _e(f) for f in st["flags"])
+                else:
+                    q = '<span class="qtag qok">stable</span>'
                 P.append("<tr%s><td>%s</td><td>%s</td>"
                          "<td class=\"num\">%s</td>"
-                         "<td class=\"num\">%s</td><td class=\"num\">%s</td></tr>"
+                         "<td class=\"num\">%s</td>"
+                         "<td class=\"num\">%s</td>"
+                         "<td class=\"num\">%s</td>"
+                         "<td class=\"num\">%s</td>"
+                         "<td class=\"num\">%s</td><td class=\"num\">%s</td>"
+                         "<td>%s</td></tr>"
                          % (cls, _e(r["runtime"]), _e(where),
                             _f(r["compute_ms"], 3),
-                            _f(r["compute_min_ms"], 3),
-                            _f(r["compute_max_ms"], 3)))
+                            mean_ci,
+                            _f(st.get("stdev_ms"), 3),
+                            _f(cv, 1),
+                            _f(st.get("iqr_ms"), 3),
+                            _f(st.get("min_ms"), 3),
+                            _f(st.get("max_ms"), 3),
+                            q))
             P.append("</tbody></table>")
+            P.append('<p class="note">Median of %s in-process repeats. '
+                     'CI95 = t-based 95%% confidence interval of the mean; '
+                     'CV%% = coefficient of variation (stdev / mean). The grey '
+                     'band behind each bar shows the observed min&ndash;max '
+                     'range. Raw repeat values are in '
+                     '<code>runtime_comparison.json</code>.</p>' % _e(repeats))
         else:
             P.append('<p class="note">No verified variants for this workload.</p>')
         P.append("</section>")
@@ -1137,6 +1681,37 @@ def build_html(data, out_path):
             P.append("</tr>")
         P.append("</tbody></table></section>")
 
+    q = s.get("quality") or {}
+    if q:
+        P.append('<section class="card"><h2>Measurement quality</h2>')
+        P.append('<div class="kpis">')
+        for n, l in [(_e(q.get("stable_variants", 0)), "stable variants"),
+                     (_e(q.get("flagged_variants", 0)), "flagged variants"),
+                     (_f(q.get("worst_cv_pct"), 1) + "%", "worst run-to-run CV"),
+                     (_e(repeats), "repeats per variant")]:
+            P.append('<div class="kpi"><div class="n">%s</div><div class="l">'
+                     "%s</div></div>" % (n, l))
+        P.append("</div>")
+        thr = q.get("thresholds") or {}
+        P.append('<p class="note">Quality gates: a variant is flagged when its '
+                 'coefficient of variation exceeds %s%% (run-to-run noise), '
+                 'when a Spid3r median falls below %s ms (timer-resolution '
+                 'floor of the 1 ms <code>now_ms()</code> clock), or when '
+                 'fewer than 5 repeats were collected. Flags are advisory: '
+                 'the numbers stay measured, but compare them with care.'
+                 '</p>' % (_f(thr.get("noisy_cv_pct"), 0),
+                           _f(thr.get("timer_floor_ms"), 0)))
+        detail = q.get("flag_detail") or []
+        if detail:
+            P.append("<ul>")
+            for d in detail:
+                P.append("<li>%s</li>" % _e(d))
+            P.append("</ul>")
+        else:
+            P.append('<p class="note">All measured variants passed the quality '
+                     'gates in this run.</p>')
+        P.append("</section>")
+
     P.append('<section class="card"><h2>Environment &amp; method</h2>')
     P.append("<table><thead><tr><th>Component</th><th>Version</th></tr>"
              "</thead><tbody>")
@@ -1160,14 +1735,39 @@ def build_html(data, out_path):
         P.append('<p class="note">Provenance not recorded for this archived run '
                  '(schema v1); the measured sources cannot be determined.</p>')
     P.append("<h3>Method</h3><ul>"
-             "<li>Identical algorithm and pinned constants in every language.</li>"
-             "<li>Each variant must print the exact expected checksum or it is "
-             "rejected and never published.</li>"
-             "<li>In-process timing (startup excluded); median of %s repeats.</li>"
-             "<li>Spid3r uses <code>now_ms()</code> (1 ms resolution), so every "
-             "workload is sized to run well above 1 ms.</li>"
-             "<li>Missing toolchains are skipped with a warning, never faked.</li>"
+             "<li>Identical algorithm and pinned constants in every language; "
+             "every variant must print the exact expected checksum or it is "
+             "rejected and never published (correctness gate before any "
+             "timing is accepted).</li>"
+             "<li>In-process timing (startup excluded); median of %s repeats "
+             "is the reported value; min, max, raw repeat values, dispersion "
+             "and confidence intervals are published, never hidden.</li>"
+             "<li>Spid3r uses <code>now_ms()</code> (1 ms resolution); workloads "
+             "are sized to stay clear of the timer floor, and any variant that "
+             "still lands near it is flagged in the quality table.</li>"
+             "<li>Missing toolchains are skipped with a warning, never faked; "
+             "Docker rows are labelled as a different environment.</li>"
              "</ul>" % _e(repeats))
+    P.append("<h3>Standards alignment</h3><ul>"
+             "<li><strong>Units:</strong> durations in milliseconds per "
+             "ISO/IEC 80000-3; ratios are dimensionless.</li>"
+             "<li><strong>Repeated-measures protocol:</strong> median of "
+             "N independent runs with published dispersion, following the "
+             "practice popularized by SPEC CPU run rules (median of repeated "
+             "runs, verify before publish).</li>"
+             "<li><strong>Correctness gate:</strong> deterministic checksums "
+             "(like SPEC's verify step) - a wrong result is discarded, never "
+             "timed and reported.</li>"
+             "<li><strong>Statistics:</strong> median, mean, sample stdev, "
+             "CV%, IQR, min/max, t-based 95% CI of the mean and percentile-"
+             "bootstrap 95% CI of the median (fixed seed, deterministic).</li>"
+             "<li><strong>Disclosure:</strong> raw repeat data in "
+             "<code>runtime_comparison.json</code>; generated programs in "
+             "<code>sources/</code> (artifact reproducibility); every warning "
+             "surfaced in this report.</li>"
+             "<li><strong>Scope:</strong> language-runtime compute speed only - "
+             "not an end-to-end web-framework or deployment benchmark.</li>"
+             "</ul>")
     P.append('<p class="note">Raw data: <code>runtime_comparison.json</code>. '
              'Generated programs are kept in <code>sources/</code>.</p>')
     P.append("</section>")

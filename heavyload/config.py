@@ -182,7 +182,7 @@ DEFAULTS = {
         "include_references": True,   # Node / Rust reference rows
         "write_sources": True,        # keep generated programs in sources/
         "timeout_s": 300,
-        "workloads": ["prime", "json", "map"],
+        "workloads": ["prime", "json", "map", "text", "matmul"],
     },
     "generator": {"isolated": False},
     "guardrails": {
@@ -432,8 +432,8 @@ def normalize(cfg):
     rc["timeout_s"] = max(60, min(1800, int(rc.get("timeout_s", 300))))
     rc["container"] = str(rc.get("container") or "").strip()
     valid_w = [str(w) for w in (rc.get("workloads") or [])
-               if str(w) in ("prime", "json", "map")]
-    rc["workloads"] = valid_w or ["prime", "json", "map"]
+               if str(w) in ("prime", "json", "map", "text", "matmul")]
+    rc["workloads"] = valid_w or ["prime", "json", "map", "text", "matmul"]
     out["runtime_comparison"] = rc
     return out
 

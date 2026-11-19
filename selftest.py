@@ -134,9 +134,10 @@ def main():
           ["runtime_comparison"]["repeats"] == 1)
     check("unknown workload names dropped",
           C.normalize({"runtime_comparison": {"workloads": ["bogus"]}})
-          ["runtime_comparison"]["workloads"] == ["prime", "json", "map"])
+          ["runtime_comparison"]["workloads"]
+          == ["prime", "json", "map", "text", "matmul"])
     check("pinned checksums present for all workloads",
-          set(RC.EXPECTED) == {"prime", "json", "map"} and
+          set(RC.EXPECTED) == {"prime", "json", "map", "text", "matmul"} and
           all(v.startswith("RESULT ") for v in RC.EXPECTED.values()))
     res_line, ms = RC._parse_output("RESULT 5133 121013308\nTIME_US 115000")
     check("runtime output parser", res_line == "RESULT 5133 121013308"
@@ -144,6 +145,18 @@ def main():
     check("runtime output parser rejects garbage",
           RC._parse_output("hello") == (None, None))
     check("geometric mean helper", abs(RC.geo([2.0, 8.0]) - 4.0) < 1e-9)
+    _st = RC.row_stats([10.0, 10.5, 10.2, 9.9, 10.1], "baseline")
+    check("row stats: median with ordered CI",
+          _st["median_ms"] == 10.1 and _st["median_ci95"][0]
+          <= _st["median_ms"] <= _st["median_ci95"][1])
+    check("row stats: deterministic bootstrap",
+          RC.row_stats([10.0, 10.5, 10.2, 9.9, 10.1], "baseline") == _st)
+    check("row stats: spid3r timer floor flagged",
+          any("timer floor" in f for f in
+              RC.row_stats([3.0, 3.0, 3.0, 3.0, 3.0], "spid3r")["flags"]))
+    check("row stats: high CV flagged as noisy",
+          any("noisy" in f for f in
+              RC.row_stats([10.0, 40.0, 12.0, 45.0, 9.0], "baseline")["flags"]))
 
     def rc_row(key, label, group, ms_value):
         return {"key": key, "runtime": label, "group": group,

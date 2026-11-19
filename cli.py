@@ -357,6 +357,11 @@ def main(argv=None):
     try:
         info = runner.run_benchmark(norm, a.root, log=log)
         C.save_config(os.path.join(a.root, "config.json"), norm)
+    except RuntimeError as ex:
+        done.set()
+        t.join(timeout=1)
+        print("\nRUN REFUSED: %s" % ex, file=sys.stderr)
+        return 3
     finally:
         done.set()
         t.join(timeout=1)

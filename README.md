@@ -20,6 +20,7 @@ opens <http://127.0.0.1:8787/> (Windows). Or:
 
 ```bash
 python server.py --open              # web UI
+python scripts/demo_target.py        # real local target on http://127.0.0.1:8090/ (/, /catalog, /health)
 python cli.py --profile smoke        # headless, ~33 s, Windows runtime (default)
 python cli.py --runtime-env docker --profile smoke   # add container cgroup metrics
 python cli.py --runtime-comparison   # language-runtime speed only, no HTTP load
@@ -83,6 +84,12 @@ a fresh config always defaults to Windows. Because a saved config carries the
 derived keys explicitly, always change the switch through `--runtime-env` or
 the web UI: those rewrite all four derived keys together. Setting
 `runtime_environment` alone leaves a half-configured state.
+
+**Dead targets are refused, not measured:** if the preflight target probe gets
+`ConnectionRefused` or a DNS failure, the run aborts before any run directory
+or report is created — measuring nothing and grading it would only produce a
+report full of empty numbers. (A target that is merely slow still runs: real
+timeouts are real observations.)
 
 **Windows overrides are rejected, not silently ignored:** `--mode auto|docker`
 or `--benchmark-mode docker_lab|instrumented_live` combined with the Windows
@@ -171,7 +178,7 @@ VM share physical cores.
 ![Runtime comparison pipeline: pinned workloads, checksum gate, ratios and artifacts](docs/diagrams/06-runtime-comparison.svg)
 
 **Read it as:** three pinned workloads are written in five languages, built
-into 10–11 variants (in Windows runtime mode these are the **installed host
+into per-workload variants (in Windows runtime mode these are the **installed host
 runtimes**; choosing Docker **adds** the real binary inside the container), and
 timed in-process over N repeats. Any variant whose checksum differs is
 **rejected**, so no simulated or estimated value can reach a report. These
@@ -185,7 +192,7 @@ See [docs/diagrams/README.md](docs/diagrams/README.md) for the full index.
 ## Language runtime comparison (runs on EVERY benchmark by default)
 
 This is the "test my language" feature. Alongside the HTTP load test, every run
-executes **three identical, checksum-verified workloads** in every available
+executes **five identical, checksum-verified workloads** in every available
 runtime and compares Spid3r against PHP, Python, Node and Rust. With the
 default **Windows** runtime environment this load-checks the *installed* host
 toolchains only; selecting **Docker** adds the deployed container variants
@@ -196,17 +203,27 @@ while keeping the host baselines (see the table above):
 | A | Prime counting, N = 50,000 | pure interpreter integer loops |
 | B | JSON round-trip, 200 rows x 600 rounds | native serializers + parsed-field loops |
 | C | String-keyed map lookups, 64 keys x 100,000 | route / config / session style lookups |
+| D | Text template building, 50,000 rows | string allocation / churn, GC pressure, log-style formatting |
+| E | Integer matmul, 128 x 128 (transposed B) | tight numeric loops, nested indexing, integer exactness |
 
 Spid3r variants measured: tree-walk, bytecode VM, VM `--no-opt`, bytecode
 `exec`, `build --release`, **and, only when Docker is selected, the real
 Spid3r binary inside the Docker container** (so you compare the version you
-actually deploy, not just the host one). Output per run directory:
+actually deploy, not just the host one). A Rust `-O` reference binary is built
+for every workload that ships a `.rs` source (A, C, D, E; workload B has none
+on purpose — Rust's stdlib has no JSON serializer, so a native-serializer
+comparison there would be false). Output per run directory:
 
 ```
-runtime_comparison.json    full raw data: every repeat, min/max, versions, ratios
-runtime_comparison.html    self-contained report (charts, tables, method, warnings)
+runtime_comparison.json    full raw data: every repeat, stats, versions, ratios
+runtime_comparison.html    self-contained report (charts, tables, method, quality, standards)
 sources/                   the exact generated programs in every language
 ```
+
+The report includes a **Measurement quality** section (per-variant CV, timer-
+resolution flags, repeat counts) and a **Standards alignment** section (ISO/IEC
+80000-3 units, SPEC-style median-of-repeated-runs protocol, checksum
+correctness gate, full disclosure of raw data).
 
 The main `report.html` gains **section 11** with the slowdown summary, and the
 web UI shows direct links to the two new artifacts.
@@ -256,17 +273,21 @@ labels) and otherwise `unavailable`, never invented as Windows.
 **Honesty rules baked into the code:** workload constants are pinned; every
 variant must print the exact expected checksum or it is **rejected and never
 published**; timing is in-process (startup excluded); the median of N repeats
-is reported; Spid3r only exposes `now_ms()`, so all workloads are sized well
-above 1 ms resolution. This measures **language-runtime compute speed**, not
+is reported with full dispersion (stdev, CV%, IQR, min/max) and 95% confidence
+intervals; run-to-run noise and timer-resolution floors are flagged, not
+hidden; Spid3r only exposes `now_ms()`, so all workloads are sized well above
+1 ms resolution. This measures **language-runtime compute speed**, not
 end-to-end web-framework performance — do not compare these numbers with RPS
 from the HTTP load test.
 
 Expected verified checksums (change a constant and the run is rejected):
 
 ```
-A  RESULT 5133 121013308
-B  RESULT 249868800 9163
-C  RESULT 44432313 100000
+A  prime   RESULT 5133 121013308
+B  json    RESULT 249868800 9163
+C  map     RESULT 44432313 100000
+D  text    RESULT 1295428 300465975
+E  matmul  RESULT -1985 -40
 ```
 
 ## Benchmark modes (derived from the runtime switch)

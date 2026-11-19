@@ -198,6 +198,28 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     else:
         mode = requested_mode
     run_id = "run-" + stamp()
+
+    # ---- fail fast on a dead target ----------------------------------------
+    # A connection-refused preflight means nothing is listening: every request
+    # in the run would be a transport failure and the report would contain no
+    # measurable evidence (0.00 ms latency, 0 bytes). Refuse the run instead
+    # of burning 30+ seconds on a useless report. DNS failures are treated the
+    # same way; timeouts are NOT — a slow-but-alive target is a real result.
+    tp = pf.get("target_probe") or {}
+    _tp_err = str(tp.get("error") or "")
+    if int(tp.get("status") or 0) == 0 and (
+            "ConnectionRefused" in _tp_err
+            or "getaddrinfo failed" in _tp_err
+            or "nodename nor servname" in _tp_err
+            or "Name or service not known" in _tp_err):
+        msg = ("Preflight failed: target %s is unreachable (%s). Start the "
+               "target web application first, then re-run. No run directory "
+               "or report was generated for a dead target."
+               % (cfg["target_url"], _tp_err or "connection failed"))
+        if log:
+            log.add(msg, "error")
+        raise RuntimeError(msg)
+
     run_dir = os.path.join(paths.runs_dir(root_dir, cfg), run_id)
     os.makedirs(run_dir, exist_ok=True)
 

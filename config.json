@@ -2,7 +2,7 @@
   "schema_version": 2,
   "runtime_environment": "windows",
   "target_url": "http://localhost:8090/",
-  "container": "spid3rweb-app",
+  "container": "",
   "mysql_container": "",
   "mode": "direct",
   "profile": "smoke",
@@ -153,7 +153,7 @@
   },
   "runtime_comparison": {
     "enabled": true,
-    "repeats": 2,
+    "repeats": 5,
     "container": "",
     "include_windows": true,
     "include_container": false,
@@ -164,7 +164,9 @@
     "workloads": [
       "prime",
       "json",
-      "map"
+      "map",
+      "text",
+      "matmul"
     ]
   },
   "generator": {
