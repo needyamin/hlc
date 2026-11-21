@@ -1,9 +1,7 @@
 {
   "schema_version": 2,
   "runtime_environment": "windows",
-  "target_url": "http://localhost:8090/",
-  "container": "",
-  "mysql_container": "",
+  "target_url": "http://127.0.0.1:8090/",
   "mode": "direct",
   "profile": "smoke",
   "health_path": "/health",
@@ -38,7 +36,6 @@
   "request_timeout_s": 12.0,
   "keep_alive": true,
   "sample_period_s": 1.0,
-  "stats_period_s": 4.0,
   "cooldown_s": 60,
   "reprobe_s": 15,
   "phases": [
@@ -153,14 +150,13 @@
   },
   "runtime_comparison": {
     "enabled": true,
-    "repeats": 5,
-    "container": "",
+    "repeats": 3,
     "include_windows": true,
-    "include_container": false,
     "include_native": true,
     "include_references": true,
     "write_sources": true,
     "timeout_s": 300,
+    "build_timeout_s": 900,
     "workloads": [
       "prime",
       "json",
@@ -168,6 +164,22 @@
       "text",
       "matmul"
     ]
+  },
+  "suitability": {
+    "enabled": true,
+    "weights": {
+      "compute_performance": 20.0,
+      "memory_efficiency": 10.0,
+      "cpu_efficiency": 5.0,
+      "http_throughput": 15.0,
+      "http_latency": 10.0,
+      "http_stability": 5.0,
+      "ecosystem_maturity": 10.0,
+      "ecosystem_libraries": 5.0,
+      "maintainability": 10.0,
+      "reliability": 5.0,
+      "concurrency_model": 5.0
+    }
   },
   "generator": {
     "isolated": false

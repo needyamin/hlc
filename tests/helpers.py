@@ -66,10 +66,10 @@ def make_result(run_id="run-x", language="python", site_id="py",
         "adjudication": adjudication,
         "meta": meta,
         "environment": {
-            "fingerprint": {
+            "fingerprint": dict({
                 "runtime_version": over.get("runtime_version", "3.13"),
                 "image_digest": over.get("image_digest", "sha256:abc"),
-            }
+            }, **(over.get("fingerprint") or {})),
         },
         "phases": phases,
         "verdict_code": over.get("verdict_code", "GO"),

@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "site_id": "python-demo",
+  "group": "hello-json",
+  "language": "python",
+  "runtime_version": "3.10+",
+  "framework": "http.server (stdlib)",
+  "framework_version": "",
+  "image": "",
+  "image_digest": "",
+  "build_cmd": "",
+  "start_cmd": "python scripts/demo_target.py --port 8090",
+  "host_port": 8090,
+  "health_path": "/health",
+  "routes": [
+    {"path": "/", "weight": 40, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/catalog", "weight": 40, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/health", "weight": 20, "method": "GET", "expected_status": 200, "expected_payload_sha": ""}
+  ],
+  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "", "mem_limit_mb": 512},
+  "native": {
+    "start_cmd": "python scripts/demo_target.py --port 8090",
+    "working_dir": "",
+    "build_cmd": "",
+    "ready_probe": true
+  },
+  "warmup": {"duration_s": 5, "requests": 500},
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 10,
+  "seed_workload": {"seed": 7919, "paths_file": ""},
+  "adapter": {"type": "", "endpoint": "/__hlc/runtime"}
+}

@@ -50,8 +50,13 @@ def infer_mode(results):
 
 
 def ensure_current(results, *, mode=None, target=None, fingerprint=None,
-                   has_runtime=None, has_browser=None):
-    """Return ``results`` upgraded to v2 (mutated in place, idempotent)."""
+                   visibility=None, has_runtime=None, has_browser=None):
+    """Return ``results`` upgraded to v2 (mutated in place, idempotent).
+
+    ``visibility`` lets the caller pin the vantage label for NEW runs
+    (e.g. ``client_only_same_host`` for a loopback single-host run). Archived
+    runs and omitted values keep the derived behaviour below.
+    """
     if not isinstance(results, dict):
         return results
 
@@ -90,7 +95,9 @@ def ensure_current(results, *, mode=None, target=None, fingerprint=None,
     # repair below then also report every server-side metric unavailable.
     if mode == "live_blackbox":
         has_server = False
-        visibility = "client_only"
+        # Caller-pinned visibility (client_only_same_host) wins for new runs;
+        # archived runs keep the plain client_only label.
+        visibility = visibility or "client_only"
     else:
         visibility = ("full_server" if has_server
                       else "server_via_adapter" if mode == "instrumented_live"

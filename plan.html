@@ -1,0 +1,371 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spid3r Improvement Plan — phase-by-phase checklist</title><style>
+:root{--bg:#f6f8fb;--card:#fff;--ink:#1b2434;--muted:#667085;--line:#e4e9f0;
+--blue:#2563eb;--orange:#f85606;--green:#16a34a;--amber:#d97706;--red:#dc2626;
+--violet:#7c3aed;--slate:#64748b;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 22px 80px}
+header.top{background:linear-gradient(120deg,#7c2d12,#f85606);color:#fff;border-radius:16px;
+padding:26px 30px;margin-bottom:22px;box-shadow:0 6px 24px rgba(248,86,6,.2)}
+header.top h1{margin:0 0 6px;font-size:25px;letter-spacing:-.4px}
+header.top p{margin:2px 0;opacity:.92;font-size:13px}
+.vbox{margin-top:16px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+border-radius:10px;padding:12px 16px}
+.vbox .v{font-size:18px;font-weight:800}
+.progressbar{height:14px;background:rgba(255,255,255,.25);border-radius:999px;overflow:hidden;
+margin-top:10px}
+.progressbar .fill{height:100%;width:0%;background:#8ce99a;border-radius:999px;
+transition:width .3s}
+.plabel{font-size:12px;margin-top:6px;opacity:.95}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;
+margin-bottom:18px;box-shadow:0 1px 3px rgba(16,24,40,.04)}
+h2{font-size:17px;margin:0 0 14px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+h3{font-size:14.5px;margin:20px 0 8px}
+p.sub{color:var(--muted);margin:-6px 0 14px;font-size:12.5px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:6px 0 4px}
+th{background:#f8fafc;color:var(--muted);text-align:left;font-weight:700;padding:8px 10px;
+border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #f0f3f8;vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--mono);white-space:nowrap}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:6px 0 12px;
+border:1px solid var(--line);border-radius:8px}
+.tblwrap table{margin:0;min-width:100%}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:#f9fbfe;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.kl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kv{font-size:21px;font-weight:800;margin:4px 0 1px}
+.ks{font-size:11px;color:var(--muted)}
+.phase{border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;
+padding:18px 20px;margin:16px 0;background:#fff}
+.phase h3{margin-top:0;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.phase.p0{border-left-color:var(--red)}.phase.p1{border-left-color:var(--orange)}
+.phase.p2{border-left-color:var(--amber)}.phase.p3{border-left-color:var(--blue)}
+.phase.p4{border-left-color:var(--violet)}.phase.p5{border-left-color:var(--slate)}
+.phase.p6{border-left-color:var(--green)}
+.phase.complete{border-left-width:5px;background:#f6fef8}
+.phase.complete .phstatus{color:var(--green);font-weight:700}
+.phstatus{font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:auto}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;
+background:#eef2f7;color:var(--muted)}
+.badge.hi{background:#e8f7ee;color:var(--green)}.badge.md{background:#fff4e0;color:var(--amber)}
+.badge.lo{background:#eaf1fe;color:var(--blue)}.badge.crit{background:#fdecec;color:var(--red)}
+.evidence{background:#fffaf7;border:1px solid #fed7aa;border-radius:8px;padding:10px 14px;
+font-size:12.5px;margin:10px 0}
+.evidence b{color:#9a3412}
+code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:12px;font-family:var(--mono)}
+.note{background:#f8fafc;border-left:3px solid var(--blue);padding:10px 14px;border-radius:0 8px 8px 0;
+color:var(--muted);font-size:12.5px;margin:10px 0}
+.warnbox{background:#fff8f1;border-left:3px solid var(--orange);padding:10px 14px;
+border-radius:0 8px 8px 0;color:#7c2d12;font-size:12.5px;margin:10px 0}
+.chart{border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin:10px 0 2px;background:#fff}
+.chart svg{display:block;width:100%;height:auto}
+.caption{font-size:12px;color:var(--muted);margin:4px 0 16px}
+.caption strong{color:var(--ink)}
+ul.tasks{margin:10px 0 6px;padding-left:0;list-style:none}
+ul.tasks li{margin:0 0 4px}
+.task{display:flex;gap:10px;align-items:flex-start;cursor:pointer;padding:6px 8px;border-radius:8px}
+.task:hover{background:#f8fafc}
+.task input{margin:3px 0 0;width:16px;height:16px;accent-color:var(--green);flex:none;cursor:pointer}
+.task .txt{flex:1}
+.task input:checked ~ .txt{color:var(--muted)}
+.task input:checked ~ .txt .t{ text-decoration:line-through }
+.t{color:var(--ink)}
+ul.tasks li.taskdone .task{background:#f2fbf4;border-radius:8px}
+ul.plain{margin:8px 0 4px;padding-left:22px}ul.plain li{margin:5px 0;list-style:disc}
+.vtag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.5px;color:var(--blue);
+background:#eaf1fe;border-radius:4px;padding:2px 8px;margin:10px 0 4px}
+footer{color:var(--muted);font-size:11.5px;text-align:center;padding:20px}
+.btnrow{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap}
+button{font:inherit;font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
+background:#fff;cursor:pointer;color:var(--ink)}
+button:hover{background:#f1f5f9}
+button.danger{color:var(--red);border-color:#fecaca}
+button.danger:hover{background:#fdecec}
+#savednote{font-size:11.5px;color:var(--green)}
+</style></head><body><div class="wrap">
+<header class="top">
+<h1>Spid3r Improvement Plan — phase-by-phase checklist</h1>
+<p>Source audit of <code style="background:rgba(255,255,255,.2)">C:\Users\needyamin\OneDrive\Desktop\spid3r</code> (src/interpreter, src/vm, src/value, src/native) grounded in Heavy Load Checker run-20261121-063445 measurements.</p>
+<p>Goal: move Spid3r up the suitability ranking by fixing the structural causes of its last-place score. Check tasks off as you complete them — progress is saved automatically in this browser.</p>
+<div class="vbox">
+<div class="v">Current: rank #14 of 14 · 23.8/100 · native geomean 4.91&times; vs fastest</div>
+<div class="plabel"><span id="overall">0 / 0 tasks done</span> · <span id="savednote">progress autosaves</span></div>
+<div class="progressbar"><div class="fill" id="overallbar"></div></div>
+<div class="btnrow"><button id="resetall" class="danger">Reset all checkmarks</button>
+<button id="exportprog">Copy progress summary</button></div>
+</div>
+</header>
+
+<div class="card">
+<h2>Executive summary — why Spid3r is last, from the source</h2>
+<p class="sub">Every claim below is tied to a file:line in your repo and to a measured number in the HLC report.</p>
+<div class="tblwrap"><table><thead><tr><th>#</th><th>Root cause (what the code does today)</th><th>Evidence</th><th>Measured damage</th></tr></thead><tbody>
+<tr><td><strong>1</strong></td><td><strong>"Native" is real LLVM AOT — but every Value operation is an <code>extern "C"</code> call into a prebuilt staticlib that can never be inlined.</strong> One call per <code>ai[j]</code>, per <code>+</code>, per binop: read → tag match → mutex <code>try_lock</code> → bounds check → unbox. Matmul ≈ 8.5M extern calls ≈ 85 ms (~10 ns/call).</td><td><code>src/native/link.rs:1006-1017</code> (IR gen), <code>src/native/ir.rs:6647-6714</code> (index → <code>call2p("spid3r_index_get")</code>), <code>src/native/rt.rs:2207-2278</code>; <code>Cargo.toml</code> crate-type staticlib, no cross-LTO</td><td class="num">E: 85 ms vs Rust 0.7 / Node 4.7<br>D: 8 ms vs Node 3.2<br>B: 64 ms vs Node 17.9</td></tr>
+<tr><td><strong>2</strong></td><td><strong>The unboxed-list machinery exists but is blind to list-of-lists rows.</strong> <code>let ai = a[i]</code> is an Index expr, not a literal/typed <code>list&lt;int&gt;</code>, so rows stay boxed and the excellent inline-index path (<code>emit_ulist_i64_get_inline</code>) never fires for the matmul inner loop.</td><td><code>src/native/ir.rs:2730</code> (<code>args.is_empty()</code> gate), <code>ir.rs:2739-2748</code> (Index exprs rejected), <code>ir.rs:3814-3871</code> (the inline path that can't be reached)</td><td class="num">E: 4–5 dispatch layers per element</td></tr>
+<tr><td><strong>3</strong></td><td><strong>VM dispatch pays a heavy prelude per instruction</strong> (cancel-poll counter, error Option move, frame re-index, bounds-checked fetch, <code>from_u8</code> match, prof check), and fusion is done by <em>runtime byte-pattern peeking</em> (~1,100 lines of cascaded byte compares) instead of compiled superinstructions.</td><td><code>src/vm/mod.rs:1277-1380</code> (prelude), <code>src/vm/mod.rs:1426-2543</code> (peek cascade), <code>src/vm/opt.rs</code> (folding, jumps, rotation — no superinstructions, no inlining, no type specialization)</td><td class="num">tree/VM/bytecode plateau at 8 ms where native hits 1 ms</td></tr>
+<tr><td><strong>4</strong></td><td><strong>Every container is <code>Arc&lt;Mutex&lt;_&gt;&gt;</code> even single-threaded</strong>, and parsed JSON boxes every node through the thread-local heap. The value model is a ~45-variant enum; a 128×128 int matrix is 16-byte boxed values where V8 uses packed SMI arrays.</td><td><code>src/value/mod.rs:18, 679-750</code>, <code>src/native/rt.rs:260-276</code> (alloc_heap_v2), <code>src/stdlib/mod.rs:3180+</code> (parser boxes nodes)</td><td class="num">Memory 6.8/10 is the <em>good</em> one; CPU 0.0</td></tr>
+</tbody></table></div>
+<div class="warnbox"><strong>Integrity flag — fix before any journal submission (Phase 0 + Phase 3):</strong> the VM contains a hardcoded byte-pattern fingerprint of the trial-division primality inner loop (<code>src/vm/mod.rs:1886-2036</code>, rotated and unrotated layouts, batch-executes up to 64 iterations in unboxed i64). That is benchmark-shaped pattern matching, not a general optimization — journal reviewers will find it, and it undermines the prime-counting result for the interpreted engines. The plan replaces it with <em>general</em> superinstructions and discloses the change.</div>
+<div class="note"><strong>Credit where due (already good — don't rewrite these):</strong> i64 binops inline with LLVM overflow intrinsics (<code>ir.rs:4667-4733</code>); unboxed <code>list&lt;int&gt;</code> with inline get/set (<code>ir.rs:3814-3871</code>); scalar-typed functions get raw ABI calls (<code>ir.rs:8081+</code>); rope string-builder + SSO strings (<code>rt.rs:1026-1207</code>, <code>value/mod.rs:443-603</code>); JSON writer with reusable byte buffer (<code>stdlib/mod.rs:3111-3178</code>); amortized GC + cancel poll every 2048 iterations; x86-64-v3 auto-upgrade with O3. The gap is architectural, not sloppy code.</div>
+</div>
+
+<div class="card">
+<h2>How the score works — what actually moves the rank</h2>
+<p class="sub">Suitability = weighted blend. Measured criteria are log-normalized between the best and worst measured language per criterion (10 = best, 0 = worst).</p>
+<div class="tblwrap"><table><thead><tr><th>Criterion</th><th class="num">Weight</th><th>Spid3r now</th><th>What moves it</th></tr></thead><tbody>
+<tr><td>Compute performance</td><td class="num">20%</td><td class="num bad">0.29 → 0.6 pts</td><td><strong>The big lever.</strong> Geomean across 5 workloads — matmul (85 ms, 124× vs fastest) dominates the log-mean. Fixing E alone lifts this from ~0.3 to ~4–6.</td></tr>
+<tr><td>Memory efficiency</td><td class="num">10%</td><td class="num meh">6.80 → 6.8 pts</td><td>Already strong (10.1 MiB geomean — 2nd smallest). Keep it; don't regress it with caches that inflate footprint.</td></tr>
+<tr><td>CPU efficiency</td><td class="num">5%</td><td class="num bad">0.00 → 0.0 pts</td><td>Same root causes as compute (extern-call CPU burn). Improves automatically with Phases 1–3.</td></tr>
+<tr><td>HTTP throughput / latency / stability</td><td class="num">30%</td><td class="num">n/a (redistributed)</td><td>Only activates via <strong>campaigns</strong> (multi-site, same workload, same host). After Phases 1–3, build one Spid3r HTTP hello-app + Node/PHP equivalents and run <code>cli.py --campaign</code>.</td></tr>
+<tr><td>Ecosystem maturity / libraries</td><td class="num">15%</td><td class="num">3+3 → 3.0 pts</td><td>Documented judgments (labelled as such). Grows with releases, docs, stdlib breadth — slow by nature, honest by design.</td></tr>
+<tr><td>Maintainability / reliability / concurrency</td><td class="num">20%</td><td class="num">unassessed</td><td>Deliberately n/a (never invented). Publish language docs + structured-concurrency design + a stability track record, then they get assessed.</td></tr>
+</tbody></table></div>
+<p class="note">Honest framing: Phases 1–4 can realistically take Spid3r from 23.8 → ~45–55 and from #14 into the top 5–7, because the measured criteria stop being zero. Reaching #1 also requires the documented-judgment criteria to be assessed — which needs releases, docs, and a production track record, i.e. time, not just code.</p>
+</div>
+
+<div class="card">
+<h2>Measured baseline (what the report shows today)</h2>
+<div class="tblwrap"><table><thead><tr><th>Workload</th><th>tree-walk</th><th>VM</th><th>VM --no-opt</th><th>bytecode</th><th>native --release</th><th>PHP</th><th>Node</th><th>Rust</th></tr></thead><tbody>
+<tr><td>A. Prime (N=50k)</td><td class="num">8.0 ms</td><td class="num">8.0 ms</td><td class="num">126.0 ms</td><td class="num">8.0 ms</td><td class="num ok"><strong>1.0 ms ★</strong></td><td class="num">17.4</td><td class="num">1.8</td><td class="num">1.4</td></tr>
+<tr><td>B. JSON (200×600)</td><td class="num">93.0</td><td class="num">93.0</td><td class="num">93.0</td><td class="num">91.0</td><td class="num">64.0</td><td class="num">71.5</td><td class="num ok"><strong>17.9</strong></td><td class="num">n/a*</td></tr>
+<tr><td>C. Map (64×100k)</td><td class="num">7.0</td><td class="num">7.0</td><td class="num">26.0</td><td class="num">7.0</td><td class="num">3.0</td><td class="num">3.7</td><td class="num ok"><strong>1.5</strong></td><td class="num">7.0</td></tr>
+<tr><td>D. Text (50k rows)</td><td class="num">27.0</td><td class="num">28.0</td><td class="num">38.0</td><td class="num">28.0</td><td class="num">8.0</td><td class="num">6.3</td><td class="num">3.2</td><td class="num ok"><strong>2.5</strong></td></tr>
+<tr><td>E. Matmul (128²)</td><td class="num">169.0</td><td class="num">168.0</td><td class="num">351.0</td><td class="num">167.0</td><td class="num bad">85.0</td><td class="num">30.1</td><td class="num">4.7</td><td class="num ok"><strong>0.7</strong></td></tr>
+</tbody></table></div>
+<p class="note">★ = workload winner. * Rust ships no stdlib JSON — B is documented n/a for Rust/Java/Kotlin/C/C++, never simulated. Medians of 3 checksum-verified runs on this machine.</p>
+<div class="chart">
+<svg viewBox="0 0 940 260" width="100%" xmlns="http://www.w3.org/2000/svg"><rect width="940" height="260" fill="#ffffff"/>
+<text x="16" y="20" font-size="13" font-weight="700" fill="#1b2434">Native --release: measured today vs projected after Phases 1–4 (log scale, ms)</text>
+<g font-size="11" fill="#667085">
+<text x="250" y="58" text-anchor="end" fill="#1b2434">A. Prime</text><rect x="260" y="48" width="46" height="12" rx="3" fill="#f85606"/><text x="312" y="58">1.0</text><rect x="260" y="62" width="42" height="12" rx="3" fill="#fda46b"/><text x="308" y="72">0.9 (proj)</text>
+<text x="250" y="96" text-anchor="end" fill="#1b2434">B. JSON</text><rect x="260" y="86" width="270" height="12" rx="3" fill="#f85606"/><text x="536" y="96">64</text><rect x="260" y="100" width="176" height="12" rx="3" fill="#fda46b"/><text x="442" y="110">35 (proj)</text>
+<text x="250" y="134" text-anchor="end" fill="#1b2434">C. Map</text><rect x="260" y="124" width="46" height="12" rx="3" fill="#f85606"/><text x="312" y="134">3.0</text><rect x="260" y="138" width="40" height="12" rx="3" fill="#fda46b"/><text x="306" y="148">2.2 (proj)</text>
+<text x="250" y="172" text-anchor="end" fill="#1b2434">D. Text</text><rect x="260" y="162" width="92" height="12" rx="3" fill="#f85606"/><text x="358" y="172">8.0</text><rect x="260" y="176" width="66" height="12" rx="3" fill="#fda46b"/><text x="332" y="186">5.0 (proj)</text>
+<text x="250" y="210" text-anchor="end" fill="#1b2434">E. Matmul</text><rect x="260" y="200" width="318" height="12" rx="3" fill="#f85606"/><text x="584" y="210">85</text><rect x="260" y="214" width="46" height="12" rx="3" fill="#fda46b"/><text x="312" y="224">8 (proj)</text>
+<line x1="260" y1="40" x2="260" y2="228" stroke="#e4e9f0"/>
+<line x1="322" y1="40" x2="322" y2="228" stroke="#f1f5f9"/><text x="322" y="240" text-anchor="middle">10</text>
+<line x1="384" y1="40" x2="384" y2="228" stroke="#f1f5f9"/><text x="384" y="240" text-anchor="middle">30</text>
+<line x1="446" y1="40" x2="446" y2="228" stroke="#f1f5f9"/><text x="446" y="240" text-anchor="middle">100</text>
+<line x1="508" y1="40" x2="508" y2="228" stroke="#f1f5f9"/><text x="508" y="240" text-anchor="middle">300</text>
+<rect x="620" y="52" width="12" height="12" rx="3" fill="#f85606"/><text x="638" y="62" fill="#1b2434">measured today</text>
+<rect x="620" y="72" width="12" height="12" rx="3" fill="#fda46b"/><text x="638" y="82" fill="#1b2434">projected after Phases 1–4 (estimates)</text>
+</g></svg></div>
+<p class="caption"><strong>Fig. P1.</strong> Projections are engineering estimates derived from the audited call counts (e.g. ~8.5M extern calls ≈ 85 ms in E ⇒ removing them at Node-like ~5 ns/op yields ~6–9 ms), not promises. Each phase ends with a re-measurement gate.</p>
+</div>
+
+<div class="card">
+<h2>The plan — six phases, each gated by a re-measurement</h2>
+<p class="sub">Sequenced by leverage per week of work. Phases 0→3 are the ranking movers; 4–6 consolidate. Check off each task — progress autosaves.</p>
+
+<div class="phase p0" id="phase-p0">
+<h3>Phase 0 — Integrity &amp; measurement hygiene <span class="badge crit">do first, ~1 day</span><span class="phstatus" data-count="p0">0/4</span></h3>
+<p><strong>Why:</strong> the prime-counting fingerprint (<code>src/vm/mod.rs:1886-2036</code>) is a benchmark-shaped pattern hardcoded into the VM. For a scientific submission this must go, and it can only be removed safely once general superinstructions exist (Phase 3). Also: median-of-3 with a 1 ms <code>now_ms()</code> timer produces "identical 8.0 ms" readings — raise repeats so improvements are statistically visible.</p>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p0-1"><span class="txt"><span class="t"><strong>CI guard against fingerprints:</strong> add a test that greps the VM for byte-pattern fingerprints of specific user programs (allowlist the general peeks only).</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p0-2"><span class="txt"><span class="t"><strong>Switch HLC runs to <code>--runtime-repeats 7</code></strong> during Spid3r development, so the timer-floor flag resolves real deltas on 1–8 ms medians.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p0-3"><span class="txt"><span class="t"><strong>Record the fingerprint's existence + planned removal</strong> in the release notes — transparency is a feature in journal review.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p0-v"><span class="txt"><span class="t"><strong>Gate — capture the pre-change baseline:</strong> run <code>python cli.py --runtime-comparison --runtime-repeats 7</code> and archive the report.html + runtime_comparison.json as the "before" evidence.</span></span></label></li>
+</ul>
+</div>
+
+<div class="phase p1" id="phase-p1">
+<h3>Phase 1 — Unbox list-of-lists rows (fixes workload E) <span class="badge hi">highest leverage, ~1–2 weeks</span><span class="phstatus" data-count="p1">0/5</span></h3>
+<div class="evidence"><b>Evidence:</b> matmul native = 85 ms because <code>analyze_unboxed_lists</code> (<code>src/native/ir.rs:2693</code>) rejects rows — <code>ir.rs:2730</code> requires empty type args (so <code>list&lt;list&lt;int&gt;&gt;</code> never qualifies) and <code>ir.rs:2739-2748</code> only accepts literals/<code>list()</code> calls, not <code>let ai = a[i]</code>. Result: ~8.5M extern calls through <code>spid3r_index_get</code> (<code>rt.rs:2207-2278</code>) + <code>spid3r_binop</code> (<code>rt.rs:1210-1322</code>), each with a mutex <code>try_lock</code> and tag match.</div>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p1-1"><span class="txt"><span class="t"><strong>Row-handle typing:</strong> when <code>let ai = a[i]</code> (or typed <code>let ai: list&lt;int&gt; = a[i]</code>) extracts from a <code>list&lt;list&lt;int&gt;&gt;</code>, emit a row handle: one <code>lock_ref</code> on the row's <code>VecData</code>, cache <code>(ptr, len, generation)</code> in an alloca for the loop body, then inline-index like <code>emit_ulist_i64_get_inline</code> (<code>ir.rs:3814-3871</code>). Invalidate on mutation/safepoint (the generation counter on <code>VecData</code>, <code>seq.rs:705-711</code>, was built for this).</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p1-2"><span class="txt"><span class="t"><strong>Typed row extraction snapshot:</strong> accept <code>let ai: list&lt;int&gt; = a[i]</code> by snapshotting the row into a <code>RawUList&lt;i64&gt;</code> per outer iteration — the copy amortizes over 128 inner iterations.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p1-3"><span class="txt"><span class="t"><strong>Extend <code>is_pure_int_expr</code></strong> (<code>ir.rs:2053-2056</code>) to accept Index-over-row-handle, so <code>s</code> stays an unboxed <code>LocalInt</code> and <code>s += ai[j] * btk[j]</code> compiles to the existing inline <code>emit_i64_binop</code> path.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p1-4"><span class="txt"><span class="t"><strong>Tests + fuzz:</strong> negative-index, mutation-during-loop, and aliasing cases for row handles; add the HLC matmul source to the test corpus.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p1-v"><span class="txt"><span class="t"><strong>Gate — re-measure:</strong> <code>spid3r build --release</code> the HLC matmul source; <code>cli.py --runtime-comparison --runtime-repeats 7 --workloads matmul</code>; checksum <code>RESULT -1985 -40</code> passes and median ≤ 10 ms.</span></span></label></li>
+</ul>
+<p><strong>Expected impact (projection):</strong> E: 85 ms → ~6–10 ms (Node parity or better). Geomean native: 10.55 → ~7 ms. Compute score 0.29 → ~3. CPU 0.0 → ~2–3.</p>
+</div>
+
+<div class="phase p2" id="phase-p2">
+<h3>Phase 2 — Make the runtime inline-able (cross-LTO) <span class="badge hi">~1 week, helps every workload</span><span class="phstatus" data-count="p2">0/4</span></h3>
+<div class="evidence"><b>Evidence:</b> generated code calls prebuilt helpers (<code>spid3r_index_get</code>, <code>spid3r_binop</code>, <code>spid3r_list_push</code>, …) from <code>libspid3r_lang.a</code>, linked after compilation with no cross-module LTO — so no hot helper can ever inline into generated loops (<code>src/native/mod.rs:136-204</code>). The repo already fixed this disease once for binops (<code>ir.rs:4667-4683</code>); the same fix one layer up is pending.</div>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p2-1"><span class="txt"><span class="t"><strong>Bitcode LTO route:</strong> build the runtime staticlib with <code>-C embed-bitcode=yes</code> (or <code>linker-plugin-lto</code>) and link user programs with <code>lld -flto</code> — O3 (<code>llvm.rs:350-358</code>) then inlines <code>spid3r_index_get</code>'s List-int arm, <code>spid3r_binop</code>'s int arms, <code>spid3r_len</code>, and the rope tail-append across the boundary.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p2-2"><span class="txt"><span class="t"><strong>IR-template alternative:</strong> emit the 6 hottest helpers directly into the user module (the codebase already does this for unboxed lists and i64 binops).</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p2-3"><span class="txt"><span class="t"><strong>Single-threaded build feature:</strong> the <code>is_multithreaded</code> constant already exists — a "no threads" build removes <code>Arc&lt;Mutex&gt;</code> locks and atomic refcounts from every container op.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p2-v"><span class="txt"><span class="t"><strong>Gate — re-measure:</strong> full comparison run; diff per-workload medians vs the Phase-1 gate; no checksum regressions. Expect D 8→4–5 ms, B 64→40–50 ms, C 3.0→~2 ms.</span></span></label></li>
+</ul>
+</div>
+
+<div class="phase p3" id="phase-p3">
+<h3>Phase 3 — Real VM superinstructions + dispatch prelude trim <span class="badge md">~2–3 weeks</span><span class="phstatus" data-count="p3">0/6</span></h3>
+<div class="evidence"><b>Evidence:</b> tree/VM/bytecode all sit at 8 ms on prime while native hits 1 ms. Dispatch pays ~8–10 fixed ops per instruction (<code>src/vm/mod.rs:1277-1380</code>); fusion is runtime byte-peeking over ~1,100 lines (<code>vm/mod.rs:1426-2543</code>) including the benchmark-shaped prime fingerprint (<code>:1886-2036</code>); <code>opt.rs</code> has folding/branch/rotation but no superinstructions, no inlining, no type specialization.</div>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p3-1"><span class="txt"><span class="t"><strong>Compile-time superinstructions</strong> (additive opcodes per <code>docs/BYTECODE_STABILITY.md</code>): <code>CmpJumpLocal2</code>, <code>ArithSetLocalPop</code> (with fused back-edge), <code>RangeLoop</code> (batched i64 stepper), <code>IndexGetLocal2</code> — emitted in <code>src/vm/compiler.rs</code>/<code>opt.rs</code> so fusion is ONE dispatch, visible to <code>--prof</code>.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p3-2"><span class="txt"><span class="t"><strong>Dispatch prelude trim:</strong> pre-decode opcodes into a <code>Vec&lt;OpCode&gt;</code> at compile time (chunk already validated at <code>vm/mod.rs:938</code>) to delete the per-dispatch bounds-check + <code>from_u8</code> match; cache <code>(ip, slots)</code> in loop locals; hoist the error-flag Option move.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p3-3"><span class="txt"><span class="t"><strong>Generalize the fusion shapes</strong> currently covered only by the fingerprint: <code>Mod;Constant 0;Equal;JumpIfTrue</code> and loop-increment tails — as general opcodes covering ANY user program.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p3-4"><span class="txt"><span class="t"><strong>Remove the trial-division fingerprint</strong> (<code>vm/mod.rs:1886-2036</code>) in the same PR — gated on prime holding ≤ 8.0 ms with the general superinstructions.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p3-5"><span class="txt"><span class="t"><strong>Small-function inlining pass</strong> in <code>opt.rs</code> (only 3 hardcoded call-site inlines exist today, <code>vm/mod.rs:3290-3353</code>).</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p3-v"><span class="txt"><span class="t"><strong>Gate — A/B the HLC workloads:</strong> before/after in one comparison run; require prime ≤ 8.0 ms, map ≤ 7.0 ms, text ≤ 27 ms before the fingerprint is deleted; keep <code>--prof</code> coverage of the new opcodes.</span></span></label></li>
+</ul>
+<p><strong>Expected impact (projection):</strong> prime 8 → 2.5–4 ms (general, not fingerprinted); map 7 → 3.5–4.5 ms; text 27 → 12–15 ms; interpreted matmul 168 → 110–130 ms (full fix is Phase 5).</p>
+</div>
+
+<div class="phase p4" id="phase-p4">
+<h3>Phase 4 — JSON: arena parse + global key interning <span class="badge md">~1–2 weeks</span><span class="phstatus" data-count="p4">0/4</span></h3>
+<div class="evidence"><b>Evidence:</b> JSON algorithms are already good (thread-local byte writer <code>stdlib/mod.rs:3111-3178</code>; byte-oriented parser with key interning <code>mod.rs:3194-3216</code>). The cost is the boxed value model: every parsed node is <code>Arc&lt;Mutex&lt;MapData&gt;&gt;</code> re-boxed through <code>alloc_heap_v2</code> (<code>rt.rs:260-276</code>) — hundreds of thousands of box+lock events vs V8's inline-property objects.</div>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p4-1"><span class="txt"><span class="t"><strong>Arena/region parse mode:</strong> allocate a whole parsed document into a bump slab (the AOT heap free-list can back it), free in one shot when the document dies.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p4-2"><span class="txt"><span class="t"><strong>Global key interning:</strong> promote the per-parser key table to a global one — keys repeat across 600 rounds.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p4-3"><span class="txt"><span class="t"><strong>Phase 2 synergy:</strong> with LTO, container-lock fast paths inline into the writer/parser loops.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p4-v"><span class="txt"><span class="t"><strong>Gate — re-measure:</strong> <code>--workloads json</code>; checksum <code>RESULT 249868800 9163</code> passes (byte-identical 9,163-char JSON); median ≤ 40 ms.</span></span></label></li>
+</ul>
+<p><strong>Expected impact (projection):</strong> B: native 64 → 30–40 ms (beats PHP 71.5, approaches Python 57.4; Node's 17.9 needs Phase 5).</p>
+</div>
+
+<div class="phase p5" id="phase-p5">
+<h3>Phase 5 — Type-specialized bytecode (the durable answer) <span class="badge lo">optional, ~4+ weeks</span><span class="phstatus" data-count="p5">0/3</span></h3>
+<p><strong>Why:</strong> the structural ceiling for the interpreted engines is the 35–45-variant <code>Value</code> enum in every slot (<code>src/value/mod.rs:679-750</code>). The semantic pass already computes type info; nothing consumes it in the VM. <code>interpreter/fast.rs:728-750</code> already proves unboxed i64 evaluation at AST level.</p>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p5-1"><span class="txt"><span class="t"><strong>i64 slot tagging:</strong> tag slots at compile time; emit typed opcodes over a <code>Vec&lt;i64&gt;</code> frame with boxed fallback on generic ops.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p5-2"><span class="txt"><span class="t"><strong>Inlining + LICM/CSE pass</strong> in <code>opt.rs</code> — none exist today.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p5-3"><span class="txt"><span class="t"><strong>Per-opcode micro-benchmarks</strong> in <code>benchmarks/</code> + full HLC comparison; checksum gate green throughout. Expected: VM prime 8 → ~1.5–2.5 ms; interpreted matmul 168 → 40–70 ms.</span></span></label></li>
+</ul>
+</div>
+
+<div class="phase p6" id="phase-p6">
+<h3>Phase 6 — The non-compute criteria (getting to #1, honestly) <span class="badge lo">ongoing</span><span class="phstatus" data-count="p6">0/3</span></h3>
+<ul class="tasks">
+<li><label class="task"><input type="checkbox" data-k="p6-1"><span class="txt"><span class="t"><strong>Activate the 30% HTTP weight:</strong> build a Spid3r HTTP hello-app (spec schema in <code>targets/examples/</code>) + Node/PHP/Python equivalents; run <code>cli.py --campaign benchmarks/lang-runtime.json</code> so HTTP throughput/latency/stability enter the score as measured criteria.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p6-2"><span class="txt"><span class="t"><strong>Ship a documented release (1.2):</strong> publish the Phase 1–4 speedups with before/after HLC reports as evidence — this is the legitimate path that moves the documented ecosystem/library scores.</span></span></label></li>
+<li><label class="task"><input type="checkbox" data-k="p6-3"><span class="txt"><span class="t"><strong>Publish language spec + concurrency design + stability notes</strong> so maintainability/reliability/concurrency can be assessed instead of left n/a.</span></span></label></li>
+</ul>
+<p class="note">Integrity rule that cuts both ways: the harness refuses to invent documented scores. The ranking climbs on measured evidence — which is precisely what makes a #1 rank meaningful in journal review.</p>
+</div>
+</div>
+
+<div class="card">
+<h2>Projected trajectory (estimates — each gated by re-measurement)</h2>
+<div class="tblwrap"><table><thead><tr><th>Stage</th><th class="num">E. matmul (native)</th><th class="num">Native geomean</th><th class="num">Compute score</th><th class="num">CPU score</th><th class="num">Overall score (proj.)</th><th class="num">Rank (proj.)</th></tr></thead><tbody>
+<tr><td>Today</td><td class="num">85.0 ms</td><td class="num">10.55 ms (4.91×)</td><td class="num bad">0.29</td><td class="num bad">0.00</td><td class="num bad">23.8</td><td class="num bad">#14 / 14</td></tr>
+<tr><td>+ Phase 1 (row unboxing)</td><td class="num">~6–10 ms</td><td class="num">~7 ms (~3.4×)</td><td class="num">~3</td><td class="num">~2–3</td><td class="num">~32–36</td><td class="num">~#11–12</td></tr>
+<tr><td>+ Phase 2 (cross-LTO)</td><td class="num">~5–8 ms</td><td class="num">~5.5–6 ms (~2.7×)</td><td class="num">~4–5</td><td class="num">~3–4</td><td class="num">~38–42</td><td class="num">~#8–10</td></tr>
+<tr><td>+ Phase 3 (VM superinstr.)</td><td class="num">unchanged (native path)</td><td class="num">unchanged</td><td class="num">—</td><td class="num">—</td><td class="num">+2–4 (tree/VM/bytecode rows)</td><td class="num">~#7–9</td></tr>
+<tr><td>+ Phase 4 (JSON arena)</td><td class="num">—</td><td class="num">~4.9–5.5 ms (~2.4×)</td><td class="num">~5–6</td><td class="num">~4–5</td><td class="num">~45–55</td><td class="num">~#5–7</td></tr>
+<tr><td>+ Phase 5–6 (typed VM + HTTP campaign + docs)</td><td class="num">—</td><td class="num">~4.5–5 ms (~2.2×)</td><td class="num">~6–7</td><td class="num">~5–6</td><td class="num">~55–70</td><td class="num">~#2–4</td></tr>
+</tbody></table></div>
+<p class="note">Projection basis: measured extern-call counts from the audit (≈8.5M calls ≈ 85 ms in E), the existing inline-path performance (<code>emit_ulist_i64_get_inline</code>), and the log-normal scoring model in <code>heavyload/suitability.py</code>. Ranges are honest — each phase's gate is the re-measured number, not the estimate.</p>
+</div>
+
+<div class="card">
+<h2>Verification loop — how every phase is proven</h2>
+<ul class="plain">
+<li><strong>Correctness first:</strong> every HLC run checksum-gates each variant (<code>RESULT 5133 121013308</code> / <code>249868800 9163</code> / <code>44432313 100000</code> / <code>1295428 300465975</code> / <code>-1985 -40</code>) — a wrong result is rejected, never timed.</li>
+<li><strong>Before/after in one artifact:</strong> <code>python cli.py --runtime-comparison --runtime-repeats 7</code> writes comparison + suitability into ONE report.html with numbered figures; run it before and after each phase and attach both to the phase PR.</li>
+<li><strong>Spot checks:</strong> <code>--workloads matmul</code> (Phase 1), <code>--workloads prime</code> (Phase 3), <code>--workloads json</code> (Phase 4).</li>
+<li><strong>Full-suite regression:</strong> <code>python selftest.py</code> + <code>python -m unittest discover -s tests</code> stay green.</li>
+<li><strong>Journal evidence pack:</strong> the Abstract + Fig. captions + head-to-head heatmap in report.html are the reviewer-facing artifacts; <code>runtime_comparison.json</code> (every repeat, every checksum) is the data-availability statement.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>What NOT to do</h2>
+<ul class="plain">
+<li><strong>Don't add more benchmark-shaped fingerprints.</strong> General superinstructions give the same speed honestly; the checksum gate already prevents wrong-result "optimizations".</li>
+<li><strong>Don't trade memory for speed carelessly.</strong> Memory efficiency (6.8/10) is Spid3r's best measured criterion.</li>
+<li><strong>Don't weaken overflow semantics.</strong> The checked-int behavior is byte-identical across engines and near-free — the cost was the extern-call shape, not the check.</li>
+<li><strong>Don't optimize the harness around Spid3r.</strong> The scoring model is what makes a future #1 rank credible.</li>
+</ul>
+</div>
+
+<footer>Spid3r improvement plan · generated from a source audit of Desktop\spid3r + HLC run-20261121-063445 evidence · checkboxes autosave in this browser</footer>
+</div>
+<script>
+(function () {
+  "use strict";
+  var KEY = "spid3r-plan-progress-v1";
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type="checkbox"][data-k]'));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { saved = {}; }
+
+  function phaseCounts() {
+    var phases = {};
+    boxes.forEach(function (b) {
+      var p = b.getAttribute("data-k").split("-")[0];
+      phases[p] = phases[p] || { done: 0, total: 0 };
+      phases[p].total += 1;
+      if (b.checked) phases[p].done += 1;
+    });
+    return phases;
+  }
+
+  function render() {
+    var phases = phaseCounts();
+    var done = 0, total = 0;
+    Object.keys(phases).forEach(function (p) {
+      total += phases[p].total;
+      done += phases[p].done;
+      var el = document.querySelector('.phstatus[data-count="' + p + '"]');
+      if (el) {
+        el.textContent = phases[p].done + "/" + phases[p].total;
+        var phase = document.getElementById("phase-" + p);
+        if (phase) {
+          var complete = phases[p].done === phases[p].total;
+          phase.classList.toggle("complete", complete);
+          el.textContent = complete ? "✓ PHASE COMPLETE " + phases[p].done + "/" + phases[p].total : phases[p].done + "/" + phases[p].total;
+        }
+      }
+    });
+    document.getElementById("overall").textContent = done + " / " + total + " tasks done";
+    document.getElementById("overallbar").style.width = (total ? (100 * done / total) : 0) + "%";
+  }
+
+  boxes.forEach(function (b) {
+    if (saved[b.getAttribute("data-k")]) b.checked = true;
+    b.addEventListener("change", function () {
+      try {
+        saved[b.getAttribute("data-k")] = b.checked;
+        localStorage.setItem(KEY, JSON.stringify(saved));
+        var n = document.getElementById("savednote");
+        n.textContent = "saved " + new Date().toLocaleTimeString();
+        setTimeout(function () { n.textContent = "progress autosaves"; }, 1500);
+      } catch (e) { /* storage unavailable */ }
+      render();
+    });
+    // grey-out styling on the row
+    b.addEventListener("change", function () {
+      var li = b.closest("li");
+      if (li) li.classList.toggle("taskdone", b.checked);
+    });
+    var li = b.closest("li");
+    if (li && b.checked) li.classList.add("taskdone");
+  });
+
+  document.getElementById("resetall").addEventListener("click", function () {
+    if (!window.confirm("Uncheck all tasks and clear saved progress?")) return;
+    saved = {};
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    boxes.forEach(function (b) {
+      b.checked = false;
+      var li = b.closest("li");
+      if (li) li.classList.remove("taskdone");
+    });
+    render();
+  });
+
+  document.getElementById("exportprog").addEventListener("click", function () {
+    var phases = phaseCounts();
+    var lines = ["Spid3r plan progress — " + new Date().toISOString()];
+    Object.keys(phases).sort().forEach(function (p) {
+      lines.push("Phase " + p.toUpperCase() + ": " + phases[p].done + "/" + phases[p].total + " done");
+    });
+    var t = document.createElement("textarea");
+    t.value = lines.join("\n");
+    document.body.appendChild(t);
+    t.select();
+    try { document.execCommand("copy"); document.getElementById("savednote").textContent = "summary copied to clipboard"; }
+    catch (e) { document.getElementById("savednote").textContent = t.value; }
+    document.body.removeChild(t);
+  });
+
+  render();
+})();
+</script>
+</body></html>

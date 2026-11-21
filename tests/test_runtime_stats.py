@@ -76,17 +76,57 @@ class TestNewWorkloadsRegistered(unittest.TestCase):
         for wid, exp in RC.EXPECTED.items():
             self.assertTrue(exp.startswith("RESULT "), wid)
             self.assertIn(wid, RC.WORKLOAD_INFO)
-            self.assertIn(wid, RC.SOURCES)
 
-    def test_new_workloads_ship_rust_sources(self):
-        # rustc -O builds cover every workload that ships .rs. json is the
-        # deliberate exception: Rust's stdlib has no JSON serializer, so a
-        # native-serializer comparison would be false.
-        self.assertIn("rs", RC.SOURCES["text"])
-        self.assertIn("rs", RC.SOURCES["matmul"])
-        self.assertIn("rs", RC.SOURCES["prime"])
-        self.assertIn("rs", RC.SOURCES["map"])
-        self.assertNotIn("rs", RC.SOURCES["json"])
+    def test_registry_covers_five_workloads_per_language(self):
+        from heavyload.comparison_sources import LANG_MODULES
+        for m in LANG_MODULES:
+            self.assertTrue(m.SOURCES, "module %s ships no sources" % m.KEY)
+            for wid in m.SOURCES:
+                self.assertIn(wid, RC.WORKLOAD_INFO)
+                self.assertIn(wid, RC.EXPECTED)
+
+    def test_json_only_for_native_serializers(self):
+        # Workload B exists ONLY where the language's standard library ships
+        # a JSON serializer; the absent entries are documented per module.
+        from heavyload.comparison_sources import module_by_key
+        for key in ("python", "node", "typescript", "php", "ruby", "go",
+                    "csharp", "swift", "matrix"):
+            self.assertIn("json", module_by_key(key).SOURCES, key)
+        for key in ("rust", "java", "kotlin", "c", "cpp"):
+            self.assertNotIn("json", module_by_key(key).SOURCES, key)
+            self.assertTrue(module_by_key(key).NOTE, key)
+
+    def test_all_registry_checksums_verified_on_this_host(self):
+        # Live verification for every DETECTED toolchain: each measured
+        # variant must reproduce the pinned checksum. Missing toolchains
+        # simply contribute nothing (skipped, never faked).
+        from heavyload.comparison_sources import LANG_MODULES
+        import tempfile, os, shutil, statistics
+        opts = {"include_windows": True, "include_references": True}
+        tools = RC.detect_tools({}, opts)
+        mods = [m for m in LANG_MODULES if m.available(tools)]
+        if not mods:
+            self.skipTest("no language toolchains detected")
+        work = tempfile.mkdtemp(prefix="hlc-test-verify-")
+        try:
+            for wid, expected in RC.EXPECTED.items():
+                for m in mods:
+                    src = m.SOURCES.get(wid)
+                    if src is None:
+                        continue
+                    RC._write_source(work, m.filename(wid), src)
+                    built = RC._build_for_module(wid, wid, m, work, tools,
+                                                 opts, [], 600)
+                    for var in RC._variants_for_module(wid, wid, m, work,
+                                                       tools, built, opts, []):
+                        meas = RC._measure(var["cmd"], cwd=work, timeout=120)
+                        self.assertEqual(meas["rc"], 0,
+                                         "%s/%s run failed" % (wid, var["key"]))
+                        res, _ = RC._parse_output(meas["stdout"])
+                        self.assertEqual(res, expected,
+                                         "%s/%s checksum" % (wid, var["key"]))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
     def test_constants_pinned(self):
         self.assertEqual(RC.TEXT_ROWS, 50000)

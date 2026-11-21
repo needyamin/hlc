@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""End-to-end self test. No Docker container is created or modified.
+"""End-to-end self test. No container, no external service, no pip deps.
 
 Starts a throw-away stdlib HTTP server on an ephemeral localhost port, runs a
-full smoke-profile benchmark in direct mode, then verifies the generated
-results.json / report.html and exercises the cgroup-backed SLO grading path
-with synthetic evidence.
+full smoke-profile benchmark in client-only mode (runtime comparison disabled
+for speed), then verifies results.json / report.html / scalability / quality
+/ suitability artifacts and the synthetic cgroup-backed SLO grading path for
+archived-run compatibility.
 
     python selftest.py
 """
@@ -37,6 +38,15 @@ def check(name, cond, detail=""):
     print("  [%s] %-56s %s" % ("OK" if cond else "FAIL", name, detail))
 
 
+def _safe_ok(rel):
+    """True when _safe_rel accepts the path (traversal attempts must raise)."""
+    try:
+        RC._safe_rel(rel)
+        return True
+    except ValueError:
+        return False
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -61,15 +71,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    print("\n=== Heavy-Load Checker self test ===")
+    print("\n=== Heavy-Load Checker self test (v2) ===")
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = srv.server_address[1]
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
-    print("Synthetic target: http://127.0.0.1:%d/ (direct mode, no Docker)" % port)
+    print("Synthetic target: http://127.0.0.1:%d/ (client-only, no container)"
+          % port)
 
     # -- config / schema checks -------------------------------------------
     for name, sched, peak in (("smoke", 33, 20), ("quick", 210, 100),
+                              ("heavy", 295, 200), ("stress", 620, 400),
                               ("standard", 1435, 300)):
         c = C.normalize({"target_url": "http://127.0.0.1:%d/" % port,
                          "profile": name})
@@ -85,50 +97,39 @@ def main():
     _, err2 = C.validate({"target_url": "ftp://x/"})
     check("reject non-HTTP scheme", err2 is not None)
 
-    # -- exclusive runtime environment switch -----------------------------
+    # -- runtime environment (single client-only vantage) -------------------
     d = C.normalize({"target_url": "http://x/"})
-    check("Windows runtime is the default",
-          d["runtime_environment"] == "windows", d["runtime_environment"])
-    check("Windows default load-checks installed runtimes",
-          d["runtime_comparison"]["include_windows"] is True and
-          d["runtime_comparison"]["include_container"] is False,
-          "include_windows=%s include_container=%s"
-          % (d["runtime_comparison"]["include_windows"],
-             d["runtime_comparison"]["include_container"]))
-    check("Windows default is direct / client-only",
+    check("host runtime is the only environment",
+          C.RUNTIME_ENVIRONMENTS == ("windows",), str(C.RUNTIME_ENVIRONMENTS))
+    check("default is direct / live_blackbox (client-only)",
           d["mode"] == "direct" and d["benchmark_mode"] == "live_blackbox",
           "%s / %s" % (d["mode"], d["benchmark_mode"]))
-    check("invalid runtime environment self-heals to Windows",
+    check("no container keys exist in a normalized config",
+          "container" not in d and "mysql_container" not in d and
+          "include_container" not in d["runtime_comparison"])
+    check("invalid runtime environment self-heals to windows",
           C.normalize({"target_url": "http://x/",
                        "runtime_environment": "solaris"})
           ["runtime_environment"] == "windows")
     legacy = C.normalize({"target_url": "http://x/",
+                          "runtime_environment": "docker",
+                          "container": "web1",
                           "benchmark_mode": "docker_lab",
                           "runtime_comparison": {"include_container": True}})
-    check("legacy Docker config is inferred once, not reclassified",
-          legacy["runtime_environment"] == "docker" and
-          legacy["runtime_comparison"]["include_container"] is True,
-          legacy["runtime_environment"])
-    flip_d = C.apply_runtime_environment(C.public_config(d), "docker")
-    check("switch to Docker adds container + cgroup metrics",
-          flip_d["runtime_environment"] == "docker" and
-          flip_d["mode"] == "auto" and flip_d["benchmark_mode"] == "auto" and
-          flip_d["runtime_comparison"]["include_container"] is True and
-          flip_d["runtime_comparison"]["include_windows"] is True)
-    flip_w = C.apply_runtime_environment(flip_d, "windows")
-    check("switch back to Windows rewrites all derived keys",
-          flip_w["runtime_environment"] == "windows" and
-          flip_w["mode"] == "direct" and
-          flip_w["benchmark_mode"] == "live_blackbox" and
-          flip_w["runtime_comparison"]["include_container"] is False and
-          flip_w["runtime_comparison"]["include_windows"] is True)
+    check("legacy Docker config maps to host env with a recorded note",
+          legacy["runtime_environment"] == "windows" and
+          legacy["benchmark_mode"] == "live_blackbox" and
+          "Docker-era" in legacy["_derived"].get("legacy_migration_note", ""))
+    check("legacy container keys are stripped, never published",
+          "container" not in legacy and
+          "include_container" not in legacy["runtime_comparison"])
     check("runtime comparison artifact schema is v2",
           RC.SCHEMA_VERSION == 2, "v%d" % RC.SCHEMA_VERSION)
 
-    # -- runtime comparison (fast, no external toolchains) ----------------
+    # -- runtime comparison (fast, no external toolchains) ------------------
     rc_def = C.normalize({})["runtime_comparison"]
     check("runtime comparison enabled by default",
-          rc_def["enabled"] is True, "status=%s" % rc_def["enabled"])
+          rc_def["enabled"] is True)
     check("runtime repeats clamped to >=1",
           C.normalize({"runtime_comparison": {"repeats": 0}})
           ["runtime_comparison"]["repeats"] == 1)
@@ -157,12 +158,23 @@ def main():
     check("row stats: high CV flagged as noisy",
           any("noisy" in f for f in
               RC.row_stats([10.0, 40.0, 12.0, 45.0, 9.0], "baseline")["flags"]))
+    check("language registry ships 14 modules",
+          len(RC.LANG_MODULES) == 14,
+          ", ".join(m.KEY for m in RC.LANG_MODULES[:6]) + " ...")
+    check("safe_rel rejects traversal",
+          all(not _safe_ok(p) for p in ("../x", "/abs", "..")),
+          "raises ValueError on ../, absolute and .. paths")
 
     def rc_row(key, label, group, ms_value):
         return {"key": key, "runtime": label, "group": group,
+                "source": "host",
                 "result": "RESULT synthetic", "compute_ms": ms_value,
                 "compute_min_ms": ms_value, "compute_max_ms": ms_value,
-                "wall_ms": ms_value, "compute_runs_ms": [ms_value]}
+                "wall_ms": ms_value, "compute_runs_ms": [ms_value],
+                "peak_rss_bytes": 10_000_000,
+                "cpu_user_s": ms_value / 1000.0 * 0.8,
+                "cpu_kernel_s": ms_value / 1000.0 * 0.1,
+                "proc_metrics_method": "synthetic"}
 
     wl = {
         "prime": {"id": "A", "title": "Prime counting",
@@ -198,12 +210,16 @@ def main():
           "%.3fx" % s_rc["slowdown"]["spid3r_vm"]["vs_php"]["geomean"])
     check("verdict reports slower, not faster",
           "slower" in s_rc["verdict"], s_rc["verdict"][:48])
+    check("pairwise matrix covers all measured keys",
+          set(s_rc["matrix"].keys()) == {"php", "python", "spid3r_vm"} and
+          abs(s_rc["matrix"]["python"]["geomeans"]["php"] - 1.414) < 0.001)
+
     fake_full = {
         "schema_version": RC.SCHEMA_VERSION,
         "generated_utc": "2026-11-10T00:00:00Z", "status": "partial",
         "config_meta": {"repeats": 5},
-        "environment": {"php": "8.3", "python": "3.13",
-                        "spid3r_host": "1.0.1"},
+        "environment": {"runtime_environment": "Host", "php": "8.3",
+                        "python": "3.13", "spid3r": "1.1.1"},
         "workloads": wl, "summary": s_rc,
         "warnings": ["synthetic warning"], "artifacts": {
             "json": "runtime_comparison.json",
@@ -220,22 +236,52 @@ def main():
     check("runtime HTML embeds verdict + checksum + warning",
           "slower" in rc_h and RC.EXPECTED["prime"] in rc_h
           and "synthetic warning" in rc_h)
+    check("runtime HTML renders the pairwise matrix",
+          "Pairwise ratio matrix" in rc_h)
     rc_compact = RC.summarize(fake_full)
     check("compact summary keeps verdict and slowdown",
           rc_compact["verdict"] == s_rc["verdict"] and
           bool(rc_compact["slowdown"]))
     rc_section = report._runtime_section(rc_compact, "run-test")
-    check("main report gains section 11",
+    check("digest fallback renders a report section",
           "<h2>" in rc_section and
           "/runs/run-test/runtime_comparison.html" in rc_section)
+
+    # -- suitability (synthetic measured data) ------------------------------
+    from heavyload import suitability as SU
+    su_dir = tempfile.mkdtemp(prefix="hlc_selftest_su_")
+    RC._write_source(su_dir, "runtime_comparison.json.tmp",
+                     json.dumps(fake_rc))
+    os.replace(os.path.join(su_dir, "runtime_comparison.json.tmp"),
+               os.path.join(su_dir, "runtime_comparison.json"))
+    su = SU.build({"target": {}}, C.normalize({}), su_dir)
+    su_sum = SU.summarize(su)
+    check("suitability ranks measured + documented languages",
+          su_sum["status"] == "ok" and len(su["ranked"]) >= 13 and
+          len(su_sum["top"]) >= 8)
+    sp3row = [r for r in su["ranked"] if r["language"] == "matrix"]
+    check("Spid3r subject language always ranked",
+          len(sp3row) == 1 and
+          sp3row[0]["label"] == "Spid3r (subject language)" and
+          not any(str(r["language"]).startswith("spid3r")
+                  for r in su["ranked"]),
+          "rank #%s" % sp3row[0]["rank"] if sp3row else "missing")
+    check("Spid3r digest embedded for the main report",
+          bool(su_sum.get("spid3r", {}).get("label")) and
+          su_sum["spid3r"].get("rank") == sp3row[0]["rank"] if sp3row
+          else False)
+    check("suitability separates provenance",
+          all(c.get("provenance") in ("measured", "documented")
+              for r in su["ranked"] for c in r["criteria"].values()))
+    check("suitability HTML written and self-contained",
+          os.path.isfile(os.path.join(su_dir, "suitability.html")))
 
     # -- full run ----------------------------------------------------------
     cfg = C.normalize({
         "target_url": "http://127.0.0.1:%d/" % port,
-        "mode": "direct",
         "profile": "smoke",
         # The cross-language comparison is deliberately disabled here: this
-        # test must stay fast and must not need Spid3r/PHP/Docker installed.
+        # test must stay fast and must not need every toolchain installed.
         "runtime_comparison": {"enabled": False},
         "health_path": "/health",
         "paths": [{"path": "/", "weight": 4},
@@ -272,29 +318,37 @@ def main():
           [x for x in r["adjudication"]["slo"]
            if x["id"] == "S7"][0]["grade"] in ("PASS", "FAIL", "WARN"))
 
-    # The default Windows run must be genuinely client-only: no container,
-    # no cgroup samples, no full_server label, S5/S6 ungraded.
-    check("default run is Windows runtime",
-          r["config"]["runtime_environment"] == "windows",
-          r["config"]["runtime_environment"])
-    check("default run resolves no container",
-          not r["meta"]["container"] and not r.get("container"),
-          repr(r["meta"]["container"]))
-    check("default run collects zero cgroup samples",
-          (r["resources"]["cgroup_samples"] or 0) == 0,
-          "%s samples" % (r["resources"]["cgroup_samples"] or 0))
-    check("default run visibility is client_only",
-          r["visibility"] == "client_only" and
+    # The v2 run is genuinely client-only: no container keys, zero server
+    # metrics, generator self-monitoring present, single-host comparability.
+    check("run config has no container keys",
+          "container" not in r["config"] and "container" not in r["meta"])
+    check("zero server-side samples",
+          (r["resources"]["cgroup_samples"] or 0) == 0 and
+          not (r["series"].get("cgroup_series") or []) and
+          not (r["series"].get("mysql_series") or []))
+    check("generator series measured",
+          len(r["series"].get("generator_series") or []) >= 20 and
+          r["resources"].get("gen_cpu_peak_pct") is not None,
+          "peak %s%% core" % r["resources"].get("gen_cpu_peak_pct"))
+    check("visibility is client_only_same_host (loopback target)",
+          r["visibility"] == "client_only_same_host" and
           r["benchmark_mode"] == "live_blackbox",
           "%s / %s" % (r["benchmark_mode"], r["visibility"]))
-    check("default run never labels resources full_server",
-          "full_server" not in json.dumps(r["per_metric_visibility"]),
-          str(r["per_metric_visibility"].get("metrics.resources.*")))
+    check("fingerprint carries the single-host gate",
+          bool((r["environment"]["fingerprint"]
+                .get("generator_fingerprint"))) and
+          (r["environment"]["fingerprint"].get("target_host")
+           in ("127.0.0.1", "localhost")))
+    check("same-host pair is comparable, remote never",
+          can_compare(r, r)[0] is True)
+    remote = json.loads(json.dumps(r))
+    remote["environment"]["fingerprint"]["generator_fingerprint"] = \
+        "other-host|Windows|AMD64|8"
+    check("different generator fingerprint refused",
+          can_compare(r, remote)[0] is False)
     check("default run grades memory SLOs N/A",
           all(x["grade"].startswith("N/A") for x in r["adjudication"]["slo"]
-              if x["id"] in ("S5", "S6")))
-    check("client-only run is refused by can_compare",
-          can_compare(r, r)[0] is False)
+              if x["id"] in ("S5", "S6", "S8")))
     hybrid = {"benchmark_mode": "live_blackbox", "container": "stale-app",
               "resources": {"cgroup_samples": 50, "stats_samples": 10},
               "series": {"cgroup_series": [{"anon_bytes": 123}]}}
@@ -302,9 +356,7 @@ def main():
     check("live_blackbox pins client_only even with cgroup evidence",
           hybrid["visibility"] == "client_only" and
           hybrid["per_metric_visibility"]["metrics.resources.*"]
-          == "unavailable",
-          "%s / %s" % (hybrid["visibility"],
-                       hybrid["per_metric_visibility"]["metrics.resources.*"]))
+          == "unavailable")
     archived = {"container": "old-app",
                 "meta": {"container": "old-app"},
                 "resources": {"cgroup_samples": 50},
@@ -312,37 +364,109 @@ def main():
     ensure_current(archived)
     check("archived v1 Docker run stays full_server",
           archived["benchmark_mode"] == "docker_lab" and
-          archived["visibility"] == "full_server",
-          "%s / %s" % (archived["benchmark_mode"], archived["visibility"]))
+          archived["visibility"] == "full_server")
 
+    # -- new analysis blocks -------------------------------------------------
+    check("quality checks ran",
+          (r.get("quality") or {}).get("status") in ("ok", "warn") and
+          len(r["quality"]["checks"]) >= 5,
+          r["quality"]["status"])
+    check("quality checks never fabricate",
+          all(c["status"] in ("ok", "warn", "fail", "insufficient_evidence")
+              for c in r["quality"]["checks"]))
+    scal = r.get("scalability") or {}
+    check("scalability analyzed from step windows",
+          scal.get("status") == "ok" and len(scal.get("points") or []) >= 2,
+          "%s, %d points, knee C=%s"
+          % (scal.get("classification"), len(scal.get("points") or []),
+             scal.get("knee_concurrency")))
+    check("step metrics recorded per concurrency level",
+          len(r.get("step_metrics") or []) >= 5,
+          "%d windows" % len(r.get("step_metrics") or []))
+    check("suitability data artifact written (single-report flow)",
+          (r.get("suitability") or {}).get("status") == "ok" and
+          os.path.isfile(os.path.join(rd, "suitability.json")))
+    check("ONE report page: no standalone comparison/suitability pages",
+          not os.path.isfile(os.path.join(rd, "runtime_comparison.html")) and
+          not os.path.isfile(os.path.join(rd, "suitability.html")))
+    check("malformed raw lines counted",
+          (r.get("aggregation_meta") or {}).get("malformed_raw_lines") == 0)
+
+    # -- report ---------------------------------------------------------------
     check("report has no <script>", "<script" not in h.lower())
     check("report has no <link>", "<link" not in h.lower())
     check("report has no src=", "src=" not in h.lower())
     check("report has no @import", "@import" not in h.lower())
-    check("report has inline SVG charts", h.count("<svg") >= 3,
+    check("report has inline SVG charts", h.count("<svg") >= 4,
           "%d charts" % h.count("<svg"))
-    check("report has 10 sections", h.count("<h2>") == 10,
-          "%d sections" % h.count("<h2>"))
+    # The suitability JSON sits beside the report, so its FULL fragment is
+    # embedded even though the comparison itself was disabled for this run.
+    check("report embeds the full suitability fragment",
+          "Technology suitability assessment" in h and
+          "subject language report" in h and
+          "Per-criterion detail" in h)
+    check("journal Abstract section present",
+          "Abstract (auto-generated" in h)
+    check("suitability figures embedded in base report",
+          h.count("<svg") >= 2, "%d svgs" % h.count("<svg"))
     check("report embeds verdict", r["adjudication"]["verdict"] in h)
-    check("report discloses Windows client-only mode",
-          "Windows runtime mode" in h and "client-only run" in h)
-    check("report records the runtime environment setting",
-          "windows / live_blackbox" in h)
-    check("report size sane", len(h) > 15000, "%d bytes" % len(h))
+    check("report discloses client-only vantage",
+          "client-only" in h and "client_only_same_host" in h)
+    check("report has methodology section",
+          "Methodology and evaluation criteria" in h)
+    check("report has scalability section with measured points",
+          "Scalability and concurrency analysis" in h)
+    check("report has quality & accuracy section",
+          "Data quality and accuracy considerations" in h)
+    check("report has strengths/weaknesses section",
+          "Strengths, weaknesses and limitations" in h)
+    check("report says the comparison was disabled (honest fallback)",
+          "15. Language runtime comparison" in h and
+          "runtime comparison was disabled" in h)
+    check("wide tables scroll instead of breaking the design",
+          h.count("tblwrap") >= 10, "%d overflow containers" % h.count("tblwrap"))
+    check("report size sane", len(h) > 40000, "%d bytes" % len(h))
 
-    # A real run WITH the comparison must gain exactly one extra section and
-    # a working link to the artifact (no external resources introduced).
+    # A run WITH the comparison embeds the full runtime-comparison evidence.
     with_rc = json.loads(json.dumps(r))
     with_rc["runtime_comparison"] = rc_compact
+    # Simulate the full JSON artifacts a real run would leave beside the
+    # report so the embedded path (not the digest fallback) is exercised.
+    RC._write_source(rc_dir, "runtime_comparison.json.tmp",
+                     json.dumps(fake_full))
+    os.replace(os.path.join(rc_dir, "runtime_comparison.json.tmp"),
+               os.path.join(rc_dir, "runtime_comparison.json"))
+    RC._write_source(rc_dir, "suitability.json.tmp",
+                     json.dumps(su))
+    os.replace(os.path.join(rc_dir, "suitability.json.tmp"),
+               os.path.join(rc_dir, "suitability.json"))
     rc_report = os.path.join(rc_dir, "full-report.html")
     report.build(with_rc, rc_report)
     with open(rc_report, "r", encoding="utf-8") as f:
         h_rc = f.read()
-    check("full report has 11 sections with comparison",
-          h_rc.count("<h2>") == 11, "%d sections" % h_rc.count("<h2>"))
-    check("full report links runtime artifact",
-          ("/runs/" + r["meta"]["run_id"] + "/runtime_comparison.html")
-          in h_rc)
+    check("report embeds the full comparison fragment",
+          "A. Prime counting" in h_rc and
+          "Pairwise ratio matrix" in h_rc and
+          "Measurement quality" in h_rc)
+    check("report embeds per-variant Spid3r engine evidence",
+          "Spid3r VM" in h_rc and "slowdown" in h_rc.lower())
+    check("journal Abstract states measured facts",
+          "Abstract (auto-generated" in h_rc and
+          "checksum-verified" in h_rc and "geomean" in h_rc)
+    check("journal figures embedded with numbered captions",
+          h_rc.count("Fig. ") >= 8 and h_rc.count("<svg") >= 10,
+          "%d captions, %d svgs" % (h_rc.count("Fig. "), h_rc.count("<svg")))
+    check("journal chart variety: pie + heatmap + scatter",
+          "Share of geomean compute time" in h_rc and
+          "Head-to-head heatmap" in h_rc and
+          "trade-off space" in h_rc)
+    check("side-by-side Spid3r engine tables embedded",
+          "Side-by-side: every Spid3r engine" in h_rc)
+    check("heatmap colour-codes every workload cell",
+          "hsl(" in h_rc and "Geomean</th>" in h_rc)
+    check("wide tables scroll inside the embedded fragments",
+          h_rc.count("tblwrap") >= 15,
+          "%d overflow containers" % h_rc.count("tblwrap"))
     check("full report still has no external resources",
           all(x not in h_rc.lower() for x in
               ("<script", "<link", "src=", "@import")))
@@ -350,12 +474,12 @@ def main():
     check("all artifacts present",
           all(os.path.isfile(os.path.join(rd, x)) for x in
               ("config.json", "preflight.json", "raw.jsonl", "results.json",
-               "report.html", "stage2_verdict.json", "status.json")))
+               "report.html", "stage2_verdict.json", "status.json",
+               "suitability.json")))
 
-    # -- cgroup-backed grading path (synthetic evidence) -------------------
-    # The base result is a Windows client-only run. This synthetic case models
-    # a Docker lab run, so flip the switch too: grading.grade() now refuses to
-    # grade S5/S6 from client-only runs even when cgroup fields are injected.
+    # -- cgroup-backed grading path (synthetic archived-run evidence) --------
+    # Grading still understands archived docker_lab evidence so historical
+    # results re-grade identically; new runs never produce it.
     fake = json.loads(json.dumps(r))
     fake["abort"] = {"flag": False, "reason": "", "at_s": None, "phase": ""}
     fake["config"]["runtime_environment"] = "docker"
@@ -387,14 +511,14 @@ def main():
     v = grading.grade(fake)
     s5 = [x for x in v["slo"] if x["id"] == "S5"][0]
     s6 = [x for x in v["slo"] if x["id"] == "S6"][0]
-    check("cgroup memory S5 graded (not N/A)",
+    check("synthetic archived evidence still grades S5",
           s5["grade"] in ("PASS", "FAIL", "WARN"), s5["grade"])
-    check("S5 FAIL on 450 MiB fitted growth", s5["grade"] == "FAIL")
-    check("cooldown S6 graded (not N/A)",
+    check("S5 FAIL on 450+ MiB fitted growth", s5["grade"] == "FAIL")
+    check("synthetic cooldown S6 graded",
           s6["grade"] in ("PASS", "FAIL", "WARN"), s6["grade"])
     check("health score capped at 40 on NO-GO", v["health_score"] <= 40,
           "%d/100" % v["health_score"])
-    check("direct mode grades memory SLOs N/A",
+    check("client-only run grades memory SLOs N/A",
           all(x["grade"].startswith("N/A") for x in r["adjudication"]["slo"]
               if x["id"] in ("S5", "S6")))
 

@@ -171,15 +171,22 @@ def grade(results):
     # S7 - availability -----------------------------------------------------
     hs = r.get("health_success_pct")
     probed = r.get("health_probes") or 0
+    probe_p95 = (r.get("health_probe_latency") or {}).get("p95")
     if probed < 5:
         add("S7", "Availability probe success",
             ">= %.1f%%" % slo_cfg["min_health_success_pct"],
             "%d probes" % probed, "N/A", "Too few probes to grade.")
+    elif hs is None:
+        add("S7", "Availability probe success",
+            ">= %.1f%%" % slo_cfg["min_health_success_pct"],
+            "%d probes but no success ratio recorded" % probed, "N/A",
+            "Health series present but the success ratio is unavailable.")
     else:
         add("S7", "Availability probe success",
             ">= %.1f%%" % slo_cfg["min_health_success_pct"],
-            "%.2f%% of %d probes (p95 %.2f ms)"
-            % (hs, probed, (r.get("health_probe_latency") or {}).get("p95", 0)),
+            "%.2f%% of %d probes (p95 %s ms)"
+            % (hs, probed, "%.2f" % probe_p95 if probe_p95 is not None
+               else "n/a"),
             "PASS" if hs >= slo_cfg["min_health_success_pct"] else "FAIL")
 
     # S8 - process / container stability ------------------------------------

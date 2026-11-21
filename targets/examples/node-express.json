@@ -6,18 +6,23 @@
   "runtime_version": "22",
   "framework": "express",
   "framework_version": "4.21",
-  "image": "hlc/node-express-hello:latest",
+  "image": "",
   "image_digest": "",
-  "build_cmd": "docker build -t hlc/node-express-hello:latest ./apps/node-express",
+  "build_cmd": "",
   "start_cmd": "node server.js",
-  "container": "hlc-node-express",
-  "host_port": 8090,
+  "host_port": 8091,
   "health_path": "/health",
   "routes": [
     {"path": "/", "weight": 60, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
     {"path": "/health", "weight": 40, "method": "GET", "expected_status": 200, "expected_payload_sha": ""}
   ],
-  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "2-3", "mem_limit_mb": 512},
+  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "", "mem_limit_mb": 512},
+  "native": {
+    "start_cmd": "node server.js",
+    "working_dir": "apps/node-express",
+    "build_cmd": "",
+    "ready_probe": true
+  },
   "warmup": {"duration_s": 10, "requests": 1000},
   "repeat_count": 3,
   "cooldown_between_repeats_s": 15,

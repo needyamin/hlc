@@ -3,20 +3,19 @@
   "title": "Heavy Load Checker target spec (v2)",
   "description": "One website/runtime to benchmark. Phase 2 campaigns reference N of these. Validated by heavyload.targetspec.validate().",
   "type": "object",
-  "required": ["site_id", "language", "image", "health_path", "routes"],
+  "required": ["site_id", "language", "health_path", "routes"],
   "properties": {
     "schema_version": {"type": "integer", "const": 2},
     "site_id": {"type": "string", "minLength": 1, "description": "Stable id used to group runs across repeats"},
     "group": {"type": "string", "description": "Optional comparison group, e.g. hello-world-json"},
-    "language": {"type": "string", "enum": ["python", "node", "go", "java", "dotnet", "php", "rust", "ruby"]},
+    "language": {"type": "string", "description": "e.g. python, node, typescript, go, java, kotlin, csharp, swift, rust, c, cpp, php, ruby"},
     "runtime_version": {"type": "string", "description": "e.g. 3.13.1, 22.14, 1.23"},
     "framework": {"type": "string", "description": "e.g. fastapi, express, gin, spring-boot"},
     "framework_version": {"type": "string"},
-    "image": {"type": "string", "description": "Docker image reference"},
-    "image_digest": {"type": "string", "description": "sha256:... recorded in the result fingerprint"},
-    "build_cmd": {"type": "string"},
-    "start_cmd": {"type": "string"},
-    "container": {"type": "string", "description": "Container name; defaults to site_id"},
+    "image": {"type": "string", "description": "Legacy Docker-era field; tolerated but unused since v2"},
+    "image_digest": {"type": "string", "description": "Legacy Docker-era field; tolerated but unused since v2"},
+    "build_cmd": {"type": "string", "description": "Legacy metadata; the native build lives in native.build_cmd"},
+    "start_cmd": {"type": "string", "description": "Legacy metadata; the native start lives in native.start_cmd"},
     "host_port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 8090},
     "health_path": {"type": "string", "default": "/health"},
     "routes": {
@@ -38,8 +37,18 @@
       "type": "object",
       "properties": {
         "cpus": {"type": "number", "minimum": 0.1, "default": 1.0},
-        "cpuset_cpus": {"type": "string", "description": "e.g. 2-3; pin the target away from the load generator"},
+        "cpuset_cpus": {"type": "string", "description": "Legacy cpuset hint; the generator pins itself only"},
         "mem_limit_mb": {"type": "integer", "minimum": 64, "default": 512}
+      }
+    },
+    "native": {
+      "type": "object",
+      "description": "Native (non-Docker) process lifecycle. Parsed into argv and executed without a shell by scripts/native_target.py.",
+      "properties": {
+        "start_cmd": {"type": "string", "description": "Command that starts the target server on host_port"},
+        "working_dir": {"type": "string", "description": "Directory the command runs in (default: the spec's folder)"},
+        "build_cmd": {"type": "string", "description": "Optional untimed build step run before start"},
+        "ready_probe": {"type": "boolean", "default": true, "description": "Wait for health_path to answer before returning"}
       }
     },
     "warmup": {

@@ -14,5 +14,5 @@
     "python-fastapi-hello",
     "node-express-hello"
   ],
-  "notes": "Compares a Python/FastAPI and a Node/Express hello-JSON site under one identical workload. Each site runs warmup_runs (discarded) + repeat_count measured passes; the campaign reports the median across repeats. IMPORTANT: runs are only comparable when every site is measured in docker_lab mode (server CPU/RAM visible). Client-only / live_blackbox runs are flagged not-comparable and never contribute a misleading ranking. Build and start each target with `python scripts/lab_up.py <site-id> --build --apply` before running the campaign."
+  "notes": "Compares a Python/FastAPI and a Node/Express hello-JSON site under one identical workload on this host. Each site runs warmup_runs (discarded) + repeat_count measured passes; the campaign reports the median across repeats. COMPARABILITY (v2): loopback targets measured with the same profile on the same machine are comparable as a single-host client-side comparison; remote client-only runs and mixed profiles are flagged not-comparable. Start each target natively with `python scripts/native_target.py <site-id> start` before running the campaign, and stop it with `stop` afterwards."
 }

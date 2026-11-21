@@ -4,7 +4,7 @@
 
 The original Spid3r harness hard-coded APP/MYSQL/HOST/PORT and a frozen
 24-minute schedule. Everything that was hard-coded is expressed here as
-configuration so an arbitrary Dockerized (or plain HTTP) site can be checked.
+configuration so an arbitrary plain-HTTP site can be checked from the host.
 """
 from __future__ import annotations
 
@@ -21,30 +21,13 @@ from .util import atomic_json
 # fairness controls, browser metrics and generator isolation flags.
 SCHEMA_VERSION = 2
 
-# The exclusive "runtime environment" switch: one source of truth for (a) which
-# installed runtimes the language load check runs in and (b) which vantage
-# point the HTTP load test measures from. Windows is the DEFAULT.
-RUNTIME_ENVIRONMENTS = ("windows", "docker")
+# The runtime environment. v2.x removed container-based instrumentation: every
+# run is a client-only measurement from the host. The constant is kept (with
+# one value) so saved configs and the UI keep a single source of truth, and a
+# legacy "docker" value is mapped to "windows" in normalize() with a note.
+RUNTIME_ENVIRONMENTS = ("windows",)
 RUNTIME_ENVIRONMENT_LABELS = {
-    "windows": "Windows (installed runtimes)",
-    "docker": "Docker (container)",
-}
-# Coherent defaults applied together when the switch changes. Keeping them in
-# one table prevents half-configured states (e.g. Windows mode still resolving
-# a container, or Docker mode publishing client_only results).
-RUNTIME_ENVIRONMENT_DEFAULTS = {
-    "windows": {
-        "mode": "direct",                   # no Docker cgroup instrumentation
-        "benchmark_mode": "live_blackbox",  # honest client_only visibility
-        "include_container": False,         # no Spid3r-in-Docker variants
-        "include_windows": True,            # check installed host toolchains
-    },
-    "docker": {
-        "mode": "auto",
-        "benchmark_mode": "auto",           # docker_lab when a container resolves
-        "include_container": True,          # measure the deployed binary
-        "include_windows": True,            # host baselines keep ratios honest
-    },
+    "windows": "Host (installed runtimes, client-only vantage)",
 }
 
 
@@ -98,6 +81,42 @@ def quick_phases():
     ]
 
 
+def heavy_phases():
+    """~5.5 min. Heavy load: high ramp, sustained C=150, break-point spike."""
+    return [
+        phase("01-plateau", "Idle plateau (C=0)", 20, 0, probe_hz=0, role="idle"),
+        phase("02-warmup", "Warm-up (C=10)", 15, 10),
+        phase("03-ramp", "Ramp 25-50-100-150", 60, steps=[25, 50, 100, 150]),
+        phase("04-sustained", "Sustained heavy (C=150)", 60, 150,
+              role="sustained"),
+        phase("05-spike", "Spike / break point (C=175-200)", 20,
+              steps=[175, 200], role="spike"),
+        phase("06-soak", "Endurance soak (C=75)", 45, 75, role="soak"),
+        phase("07-zero-load", "Zero-load recovery (C=0)", 60, 0, probe_hz=0,
+              role="cooldown"),
+        phase("08-reprobe", "Availability re-probe", 15, 0, probe_hz=1,
+              role="reprobe"),
+    ]
+
+
+def stress_phases():
+    """~10.5 min. Stress conditions: very high concurrency, long soak."""
+    return [
+        phase("01-plateau", "Idle plateau (C=0)", 30, 0, probe_hz=0, role="idle"),
+        phase("02-warmup", "Warm-up (C=20)", 20, 20),
+        phase("03-ramp", "Ramp 50-100-200-300", 90, steps=[50, 100, 200, 300]),
+        phase("04-sustained", "Sustained stress (C=300)", 120, 300,
+              role="sustained"),
+        phase("05-spike", "Spike / break point (C=350-400)", 30,
+              steps=[350, 400], role="spike"),
+        phase("06-soak", "Endurance soak (C=150)", 180, 150, role="soak"),
+        phase("07-zero-load", "Zero-load recovery (C=0)", 120, 0, probe_hz=0,
+              role="cooldown"),
+        phase("08-reprobe", "Availability re-probe", 30, 0, probe_hz=1,
+              role="reprobe"),
+    ]
+
+
 def standard_phases():
     """~24 min. The frozen schedule used for the original Spid3r benchmark."""
     return [
@@ -121,6 +140,10 @@ PRESETS = {
               "max_concurrency": 20},
     "quick": {"label": "Quick (~3.5 min)", "phases": quick_phases,
               "max_concurrency": 100},
+    "heavy": {"label": "Heavy (~5.5 min)", "phases": heavy_phases,
+              "max_concurrency": 200},
+    "stress": {"label": "Stress (~10.5 min)", "phases": stress_phases,
+               "max_concurrency": 400},
     "standard": {"label": "Standard (~24 min)", "phases": standard_phases,
                  "max_concurrency": 300},
 }
@@ -129,11 +152,9 @@ PRESETS = {
 # ---------------------------------------------------------------- defaults --
 DEFAULTS = {
     "schema_version": SCHEMA_VERSION,
-    "runtime_environment": "windows",  # windows (default) | docker; exclusive
+    "runtime_environment": "windows",   # only value since v2 (client-only)
     "target_url": "http://localhost:8090/",
-    "container": "",                 # empty => auto-detect from published port
-    "mysql_container": "",           # empty => no MySQL sampler
-    "mode": "direct",                # set by runtime_environment; advanced override
+    "mode": "direct",                   # fixed: no container instrumentation
     "profile": "quick",
     "health_path": "/health",
     "paths": [{"path": "/", "weight": 100}],
@@ -141,13 +162,12 @@ DEFAULTS = {
     "max_concurrency": 100,
     "request_timeout_s": 12,
     "keep_alive": True,
-    "sample_period_s": 1,           # cgroup collector cadence (seconds, float)
-    "stats_period_s": 4,            # docker stats cadence (seconds, float)
+    "sample_period_s": 1,           # generator/health sampler cadence (seconds)
     "cooldown_s": 60,               # post-abort zero-HTTP observation
     "reprobe_s": 15,                # post-abort 1 Hz availability re-probe
     "phases": quick_phases(),
-    # --- v2: identity, comparability and future multi-language campaigns ---
-    "benchmark_mode": "live_blackbox",  # set by runtime_environment; advanced override
+    # --- v2: identity, comparability and multi-language campaigns ---
+    "benchmark_mode": "live_blackbox",  # fixed: honest client-only visibility
     "target": {                     # metadata about the SITE, not the host
         "site_id": "", "group": "", "language": "", "runtime_version": "",
         "framework": "", "framework_version": "", "image": "",
@@ -169,24 +189,42 @@ DEFAULTS = {
     "browser": {"enabled": False, "cdp_url": "http://127.0.0.1:9222"},
     "runtime_adapter": {"type": "", "endpoint": "/__hlc/runtime"},
     # Cross-language runtime comparison. Enabled by default so EVERY run also
-    # produces runtime_comparison.json + runtime_comparison.html. The Windows
-    # default checks installed host toolchains only; the Docker option adds the
-    # deployed Spid3r binary inside the container.
+    # produces runtime_comparison.json + runtime_comparison.html. All installed
+    # host toolchains are checked; missing ones are skipped, never simulated.
     "runtime_comparison": {
         "enabled": True,
         "repeats": 5,                 # median of N in-process repeats
-        "container": "",              # "" => config.container / auto-resolve
         "include_windows": True,      # installed host runtimes (checked by default)
-        "include_container": False,   # Docker variants: off unless Docker is chosen
         "include_native": True,       # spid3r build --release variant
-        "include_references": True,   # Node / Rust reference rows
+        "include_references": True,   # compiled reference rows
         "write_sources": True,        # keep generated programs in sources/
-        "timeout_s": 300,
+        "timeout_s": 300,             # per-run execution timeout
+        "build_timeout_s": 900,       # kotlinc / dotnet can be slow on cold start
         "workloads": ["prime", "json", "map", "text", "matmul"],
+    },
+    # Technology suitability assessment. Weights are relative (normalised to
+    # 100 inside the module). Criteria fed only by measured data carry a
+    # "measured" provenance; the documented criteria are labelled as such in
+    # every report and never presented as measurements.
+    "suitability": {
+        "enabled": True,
+        "weights": {
+            "compute_performance": 20,
+            "memory_efficiency": 10,
+            "cpu_efficiency": 5,
+            "http_throughput": 15,
+            "http_latency": 10,
+            "http_stability": 5,
+            "ecosystem_maturity": 10,
+            "ecosystem_libraries": 5,
+            "maintainability": 10,
+            "reliability": 5,
+            "concurrency_model": 5,
+        },
     },
     "generator": {"isolated": False},
     "guardrails": {
-        "max_anon_mib": 8192.0,
+        "max_anon_mib": 8192.0,       # generator working-set ceiling (MiB)
         "consecutive_samples": 10,
         "min_host_free_gb": 3.0,
         "max_error_rate_pct": 50.0,
@@ -231,30 +269,22 @@ def apply_profile(cfg, name):
 
 
 def apply_runtime_environment(cfg, env):
-    """Apply the exclusive runtime switch as one coherent preset.
+    """Apply the runtime switch as one coherent preset.
 
-    ``windows`` (the default) load-checks installed host toolchains and runs
-    the HTTP test in direct / client-only mode. ``docker`` keeps those host
-    baselines (they are the measuring stick) and additionally instruments the
-    container's cgroups and its deployed Spid3r binary.
-
-    Always use this helper instead of setting ``runtime_environment`` alone:
-    a saved config carries explicit derived keys, so changing just the switch
-    would otherwise leave a half-configured state.
+    Since v2.x the only supported environment is ``windows`` (host, client
+    only). The helper still exists as the single write path used by the web
+    UI / API so a legacy ``docker`` request is rejected with a clear message
+    instead of producing a half-configured state.
     """
     env = str(env or "").strip().lower()
     if env not in RUNTIME_ENVIRONMENTS:
-        raise ValueError("runtime_environment must be one of %s"
+        raise ValueError("runtime_environment must be one of %s "
+                         "(container instrumentation was removed in v2)"
                          % ", ".join(RUNTIME_ENVIRONMENTS))
     out = {k: v for k, v in (cfg or {}).items() if not k.startswith("_")}
     out["runtime_environment"] = env
-    preset = RUNTIME_ENVIRONMENT_DEFAULTS[env]
-    out["mode"] = preset["mode"]
-    out["benchmark_mode"] = preset["benchmark_mode"]
-    rc = dict(out.get("runtime_comparison") or {})
-    rc["include_container"] = preset["include_container"]
-    rc["include_windows"] = preset["include_windows"]
-    out["runtime_comparison"] = rc
+    out["mode"] = "direct"
+    out["benchmark_mode"] = "live_blackbox"
     return public_config(normalize(out))
 
 
@@ -277,40 +307,40 @@ def normalize(cfg):
     # not leak into new result documents.
     out.pop("follow_redirects", None)
 
-    # --- exclusive runtime environment switch -------------------------------
-    # Infer once for configs that predate the switch: an existing Docker lab /
-    # container setup keeps working instead of being silently reclassified as
-    # Windows. A fresh config (no key at all) defaults to Windows.
-    raw_rc = raw.get("runtime_comparison") or {}
-    if "runtime_environment" not in raw:
-        legacy_docker = (bool(raw_rc.get("include_container"))
-                         or str(raw.get("benchmark_mode")) in
-                         ("docker_lab", "instrumented_live")
-                         or str(raw.get("mode")) == "docker")
-        env = "docker" if legacy_docker else "windows"
-    else:
-        env = str(raw["runtime_environment"] or "windows").strip().lower()
+    # --- runtime environment --------------------------------------------------
+    # Only the host (client-only) environment exists since v2. A legacy
+    # "docker" value (or legacy Docker-era derived keys) is mapped to the host
+    # environment and the fact is recorded, never hidden.
+    legacy_docker = (
+        str(raw.get("runtime_environment") or "").strip().lower() == "docker"
+        or bool((raw.get("runtime_comparison") or {}).get("include_container"))
+        or str(raw.get("benchmark_mode")) in ("docker_lab", "instrumented_live")
+        or str(raw.get("mode")) == "docker"
+        or raw.get("container") or raw.get("mysql_container"))
+    env = str(out.get("runtime_environment") or "windows").strip().lower()
     if env not in RUNTIME_ENVIRONMENTS:
-        env = "windows"          # self-heal a typo; never silently enable Docker
+        env = "windows"          # self-heal a typo; never invent an environment
     out["runtime_environment"] = env
-    preset = RUNTIME_ENVIRONMENT_DEFAULTS[env]
-    # Derived keys are only defaulted when the caller did not set them, so
-    # advanced overrides (--mode / --benchmark-mode) remain usable. Every real
-    # switch change goes through apply_runtime_environment(), which rewrites
-    # all four keys together - saved configs always carry them explicitly.
-    if "mode" not in raw:
-        out["mode"] = preset["mode"]
-    if "benchmark_mode" not in raw:
-        out["benchmark_mode"] = preset["benchmark_mode"]
-    if "include_container" not in raw_rc:
-        out["runtime_comparison"]["include_container"] = preset["include_container"]
-    if "include_windows" not in raw_rc:
-        out["runtime_comparison"]["include_windows"] = preset["include_windows"]
+    out["mode"] = "direct"
+    out["benchmark_mode"] = "live_blackbox"
 
-    if str(out["benchmark_mode"]) not in (
-            "auto", "docker_lab", "live_blackbox", "instrumented_live"):
-        raise ValueError("benchmark_mode must be auto, docker_lab, "
-                         "live_blackbox or instrumented_live")
+    # --- legacy Docker-era keys: stripped, never published --------------------
+    dropped = [k for k in ("container", "mysql_container", "stats_period_s")
+               if k in out]
+    for k in dropped:
+        out.pop(k, None)
+    rc0 = out.get("runtime_comparison") or {}
+    for k in ("container", "include_container"):
+        rc0.pop(k, None)
+    out["runtime_comparison"] = rc0
+    if legacy_docker:
+        dropped = (dropped or []) + ["runtime_comparison.include_container"]
+        legacy_note = ("config carried Docker-era keys (%s); container "
+                       "instrumentation was removed in v2 and the run is "
+                       "client-only" % ", ".join(dropped))
+    else:
+        legacy_note = ""
+
     if not isinstance(out["targets"], list):
         raise ValueError("targets must be a list of site ids / spec paths")
     out["targets"] = [str(x) for x in out["targets"]]
@@ -341,9 +371,12 @@ def normalize(cfg):
         "origin": "%s://%s:%d" % (u.scheme, u.hostname,
                                   u.port or (443 if u.scheme == "https" else 80)),
     }
+    if legacy_note:
+        out["_derived"]["legacy_migration_note"] = legacy_note
 
-    if str(out["mode"]) not in ("auto", "docker", "direct"):
-        raise ValueError("mode must be auto, docker or direct")
+    if str(out["mode"]) != "direct":
+        raise ValueError("mode must be 'direct' (container instrumentation "
+                         "was removed in v2)")
 
     paths = []
     for p in out["paths"] or []:
@@ -397,13 +430,11 @@ def normalize(cfg):
     out["_derived"]["weighted_paths"] = [
         p["path"] for p in paths for _ in range(p["weight"])
     ]
-    # v2: sub-second sampler cadence is now allowed (the collector is a single
-    # low-overhead process rather than a shell pipeline). cooldown/reprobe stay
-    # whole seconds for backwards-compatible phase arithmetic.
+    # v2: sub-second sampler cadence is allowed. cooldown/reprobe stay whole
+    # seconds for backwards-compatible phase arithmetic.
     out["request_timeout_s"] = max(1.0, float(out["request_timeout_s"]))
     out["sample_period_s"] = min(10.0, max(0.05,
                                            float(out["sample_period_s"])))
-    out["stats_period_s"] = min(60.0, max(0.5, float(out["stats_period_s"])))
     for k in ("cooldown_s", "reprobe_s"):
         out[k] = max(0, int(out[k]))
     out["guardrails"]["max_anon_mib"] = int(out["guardrails"]["max_anon_mib"])
@@ -425,16 +456,29 @@ def normalize(cfg):
     rc["enabled"] = bool(rc.get("enabled", True))
     rc["repeats"] = max(1, min(20, int(rc.get("repeats", 5))))
     rc["include_windows"] = bool(rc.get("include_windows", True))
-    rc["include_container"] = bool(rc.get("include_container", False))
     rc["include_native"] = bool(rc.get("include_native", True))
     rc["include_references"] = bool(rc.get("include_references", True))
     rc["write_sources"] = bool(rc.get("write_sources", True))
     rc["timeout_s"] = max(60, min(1800, int(rc.get("timeout_s", 300))))
-    rc["container"] = str(rc.get("container") or "").strip()
+    rc["build_timeout_s"] = max(60, min(3600,
+                                        int(rc.get("build_timeout_s", 900))))
     valid_w = [str(w) for w in (rc.get("workloads") or [])
                if str(w) in ("prime", "json", "map", "text", "matmul")]
     rc["workloads"] = valid_w or ["prime", "json", "map", "text", "matmul"]
     out["runtime_comparison"] = rc
+    su = out["suitability"] or {}
+    su["enabled"] = bool(su.get("enabled", True))
+    w_src = su.get("weights") or {}
+    w_clean = {}
+    for k, v in w_src.items():
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv >= 0:
+            w_clean[str(k)] = fv
+    su["weights"] = w_clean
+    out["suitability"] = su
     return out
 
 

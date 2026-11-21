@@ -1,100 +1,94 @@
-"""Guard against the sampler contaminating the target's CPU numbers.
+"""Guard against the instrumentation perturbing the measurements it takes.
 
-Static checks always run. The live Docker check is opt-in: set
-HLC_TEST_CONTAINER=<name> with Docker Desktop running, otherwise it is skipped
-(and reported as SKIP, never as a pass).
+The v2 sampler stack is deliberately tiny (one health-probe thread + one
+generator self-monitor thread). These static checks pin the properties that
+keep the observer cheap and honest:
 
-Historical bug: orphaned in-container shell loops inflated idle CPU from
-~0.85% to 8-15%. The v2 collector must stay a single process with no shell
-forks and a deterministic shutdown handshake.
+  * no sampler thread busy-loops or shells out (nothing to contaminate)
+  * the generator sampler derives CPU% from process_time deltas and keeps
+    its own working set bounded
+  * measurement provenance is recorded, never implied
 """
 
 from __future__ import annotations
 
 import os
 import sys
-import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from heavyload import docker_probe as dp  # noqa: E402
-from heavyload.collectors.cgroup import (  # noqa: E402
-    CG_COLLECTOR_PY, CgroupCollector,
-)
-from heavyload.samplers import parse_cg_line  # noqa: E402
+from heavyload import samplers  # noqa: E402
 
 
 class StaticChecks(unittest.TestCase):
-    def test_collector_spawns_no_subprocesses(self):
+    def test_sampler_module_spawns_no_subprocesses(self):
+        import inspect
+        src = inspect.getsource(samplers)
         for forbidden in ("subprocess", "os.system", "os.popen", "Popen(",
-                          "grep ", "awk ", "sed "):
-            self.assertNotIn(forbidden, CG_COLLECTOR_PY)
+                          "docker", "shell"):
+            self.assertNotIn(forbidden, src,
+                             "sampler must never shell out (found %r)"
+                             % forbidden)
 
-    def test_collector_has_deterministic_shutdown(self):
-        self.assertIn("select.select", CG_COLLECTOR_PY)
-        self.assertIn('"quit"', CG_COLLECTOR_PY)
-        self.assertIn("sys.stdout.flush()", CG_COLLECTOR_PY)
+    def test_only_expected_background_threads(self):
+        import inspect
+        src = inspect.getsource(samplers.SamplerSet.start)
+        self.assertIn("hlc-health", src)
+        self.assertIn("hlc-generator", src)
+        self.assertNotIn("hlc-cgroup", src)
+        self.assertNotIn("hlc-stats", src)
+        self.assertNotIn("hlc-mysql", src)
 
-    def test_collector_emits_compatible_protocol(self):
-        for token in ("@@S", "CGVER v", "usage_usec", "PROCJSON "):
-            self.assertIn(token, CG_COLLECTOR_PY)
+    def test_client_only_is_always_true(self):
+        s = samplers.SamplerSet({})
+        self.assertTrue(s.client_only)
 
-    def test_stop_is_safe_when_never_started(self):
-        CgroupCollector("no-such-container").stop()
+    def test_generator_sampler_derives_cpu_pct(self):
+        s = samplers.SamplerSet({"sample_period_s": 0.05}, t0=None)
+        import threading
+        s.stop_evt = threading.Event()
 
-    def test_legacy_shell_is_kept_only_as_fallback(self):
-        self.assertIn("FALLBACK", dp.__doc__)
-        self.assertIn("HLC_CG_LOOP_7C41B2", dp.CG_LOOP)
+        def fake_wait(_):
+            return True
 
-    def test_probe_line_roundtrip(self):
-        rec = {}
-        parse_cg_line(rec, "anon 1048576")
-        self.assertEqual(rec["anon_bytes"], 1048576)
-        self.assertEqual(rec["anon_mib"], 1.0)
+        s.stop_evt.wait = fake_wait
+        recs = []
+        ticks = iter(range(1, 100))
 
+        def fake_push(key, rec):
+            recs.append(rec)
+            if len(recs) >= 3:
+                s.stop_evt.set()
+        s._push = fake_push
+        # Advance the fake clock 50 ms on every sample so the CPU% delta
+        # derivation has a real time base.
+        s._t = lambda: round(next(ticks) * 0.05, 3)
+        s._generator_sampler()
+        self.assertGreaterEqual(len(recs), 3)
+        for r in recs:
+            self.assertIn("cpu_time_s", r)
+            self.assertIn("phase", r)
+        # Second sample onward must carry the derived cpu_pct.
+        self.assertIsNotNone(recs[1].get("cpu_pct"))
+        self.assertGreaterEqual(recs[1]["cpu_pct"], 0.0)
 
-@unittest.skipUnless(os.environ.get("HLC_TEST_CONTAINER"),
-                     "set HLC_TEST_CONTAINER=<name> and start Docker Desktop")
-class LiveIdleCheck(unittest.TestCase):
-    def test_idle_cpu_stays_below_1_5_percent(self):
-        container = os.environ["HLC_TEST_CONTAINER"]
-        col = CgroupCollector(container, period=0.2)
-        self.assertTrue(col.start(), "collector could not start")
-        self.assertEqual(col.mode, "python_v2",
-                         "expected the low-perturbation collector, got %s"
-                         % col.mode)
-        samples, procs, started = [], [], time.monotonic()
-        try:
-            rec = None
-            for line in col.lines():
-                line = line.strip()
-                if line == "@@S":
-                    if rec:
-                        samples.append(rec)
-                    rec = {}
-                elif line.startswith("PROCJSON "):
-                    procs.append(line)
-                elif rec is not None:
-                    parse_cg_line(rec, line)
-                if time.monotonic() - started > 10:
-                    break
-        finally:
-            col.stop()
-        self.assertGreaterEqual(len(samples), 5)
-        self.assertTrue(procs, "no per-process samples emitted")
-        usages = [(s.get("usage_usec"), i) for i, s in enumerate(samples)
-                  if s.get("usage_usec") is not None]
-        if len(usages) >= 2:
-            (u0, _), (u1, _) = usages[0], usages[-1]
-            # Rough but sufficient guard: <1.5% of one core over the window.
-            cpu_pct = (u1 - u0) / (10.0 * 1e6) * 100.0
-            self.assertLess(cpu_pct, 1.5,
-                            "idle CPU %.2f%% - collector perturbs the target"
-                            % cpu_pct)
-        self.assertIsNone(col.proc, "collector process handle was not cleared")
+    def test_self_memory_never_raises(self):
+        rss, peak = samplers._self_memory()
+        # Either real numbers or honest None; never an exception.
+        self.assertTrue(rss is None or rss > 0)
+        self.assertTrue(peak is None or peak >= (rss or 0))
+
+    def test_snapshot_keys_are_client_side_only(self):
+        s = samplers.SamplerSet({})
+        snap = s.snapshot()
+        for key in ("gen_rss_mib", "gen_cpu_pct", "probes",
+                    "generator_samples"):
+            self.assertIn(key, snap)
+        for gone in ("anon_mib", "cgroup_samples", "pids"):
+            self.assertNotIn(gone, snap)
 
 
 if __name__ == "__main__":

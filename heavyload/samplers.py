@@ -1,139 +1,98 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Instrumentation samplers: cgroup v2/v1, docker stats, optional MySQL, health.
+"""Instrumentation samplers: health probes + load-generator self-monitoring.
 
-Canonical memory metric = cgroup v2 `memory.stat anon` in RAW BYTES, converted
-to MiB. `docker stats` human-readable strings (decimal MB) are kept in separate
-fields and never mixed with cgroup bytes. In cgroup v1 containers `rss` is used
-as the anonymous-memory proxy and is explicitly labelled as such in the report.
+There is no server-side instrumentation channel: the load generator only ever
+speaks HTTP to the target, so every run is labelled ``client_only`` and the
+report says so. What IS measured on the generator side (and published as
+``generator_series``) is the cost of measuring: this process's CPU time and
+working set, sampled at ``sample_period_s``. That data answers "was the load
+generator itself saturated?" - a question that must be answered before any
+latency percentile can be trusted.
 """
 from __future__ import annotations
 
-import subprocess
+import ctypes
+import os
+import sys
 import threading
 import time
 
-from . import docker_probe as dp
-from .collectors.cgroup import CgroupCollector
-from .collectors.docker_stats import parse_stats_line
 from .collectors.health import probe_once
-from .collectors.mysql import loop_script as mysql_loop_script
-from .collectors.procfs import parse_proc_line, summarize_proc_series
 from .latency import ms, now_ns
 from .util import host_free_gb, utc
 
-MEMSTAT_KEYS = {"anon", "file", "kernel", "slab", "sock", "shmem", "rss",
-                "cache", "mapped_file", "pgfault", "pgmajfault", "pgscan",
-                "pgsteal", "workingset_refault"}
-BYTE_KEYS = {"anon", "file", "kernel", "slab", "sock", "shmem", "rss",
-             "cache", "mapped_file"}
-PROC_KEYS = {"VmPeak", "VmSize", "VmRSS", "VmData", "Threads"}
+PAGE = 4096
 
 
-def _int(tok, i=1):
+def _win_self_memory():
+    """Current-process memory counters via GetProcessMemoryInfo (Windows).
+
+    Returns (rss_bytes, peak_rss_bytes) or (None, None) when unavailable.
+    PeakWorkingSetSize is tracked by the kernel, so no polling is missed.
+    """
+    class PMEWS(ctypes.Structure):
+        _fields_ = [("cb", ctypes.c_ulong),
+                    ("PageFaultCount", ctypes.c_ulong),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t)]
+
     try:
-        return int(tok[i])
+        psapi = ctypes.WinDLL("psapi")
+        kernel32 = ctypes.WinDLL("kernel32")
+        m = PMEWS()
+        m.cb = ctypes.sizeof(m)
+        # GetCurrentProcess() returns the pseudo handle -1; querying memory
+        # info on it needs PROCESS_MEMORY_COUNTERS access only.
+        if not psapi.GetProcessMemoryInfo(
+                ctypes.c_void_p(-1), ctypes.byref(m), m.cb):
+            return None, None
+        return int(m.WorkingSetSize), int(m.PeakWorkingSetSize)
     except Exception:
-        return None
+        return None, None
 
 
-def parse_cg_line(rec, line):
-    tok = line.split()
-    if not tok:
-        return
-    k = tok[0]
-    if k == "CGVER" and len(tok) > 1:
-        rec["cgroup_version"] = tok[1]
-    elif k == "CUR":
-        v = _int(tok)
-        if v is not None:
-            rec["current_bytes"] = v
-            rec["current_mib"] = round(v / 1048576.0, 3)
-    elif k == "PEK":
-        v = _int(tok)
-        if v is not None:
-            rec["peak_bytes"] = v
-            rec["peak_mib"] = round(v / 1048576.0, 3)
-    elif k == "PIDS":
-        v = _int(tok)
-        if v is not None:
-            rec["pids_current"] = v
-    elif k == "PIDS_EV_max":
-        v = _int(tok)
-        if v is not None:
-            rec["pids_events_max"] = v
-    elif k == "START":
-        v = _int(tok)
-        if v is not None:
-            rec["pid1_starttime"] = v
-    elif k == "LISTEN" and len(tok) > 2:
-        a, b = _int(tok), _int(tok, 2)
-        if a is not None and b is not None:
-            rec["listen_overflows"], rec["listen_drops"] = a, b
-    elif k == "IO" and len(tok) > 2:
-        a, b = _int(tok), _int(tok, 2)
-        if a is not None and b is not None:
-            rec["io_rbytes"], rec["io_wbytes"] = a, b
-    elif k.startswith("EV_") and len(tok) > 1:
-        v = _int(tok)
-        if v is not None:
-            rec[k[3:]] = v
-    elif k.startswith("PSI_") and len(tok) > 2:
-        for t_ in tok[2:]:
-            if t_.startswith("avg10="):
-                try:
-                    rec["psi_" + k[4:] + "_avg10"] = float(t_.split("=")[1])
-                except Exception:
-                    pass
-    elif k.startswith("PROC_") and len(tok) > 1:
-        key = k[5:].rstrip(":")
-        if key in PROC_KEYS:
-            v = _int(tok)
-            if v is not None:
-                rec["proc_" + key.lower()] = v
-    elif k in MEMSTAT_KEYS and len(tok) > 1:
-        v = _int(tok)
-        if v is not None:
-            rec[k + ("_bytes" if k in BYTE_KEYS else "")] = v
-            if k in BYTE_KEYS:
-                rec[k + "_mib"] = round(v / 1048576.0, 3)
-    elif k in ("usage_usec", "nr_throttled", "nr_periods") and len(tok) > 1:
-        v = _int(tok)
-        if v is not None:
-            rec[k] = v
+def _self_memory():
+    """(rss_bytes, peak_rss_bytes) for this process, or (None, None)."""
+    if sys.platform == "win32":
+        return _win_self_memory()
+    try:
+        rss = peak = None
+        with open("/proc/self/status", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    rss = int(line.split()[1]) * 1024
+                elif line.startswith("VmHWM:"):
+                    peak = int(line.split()[1]) * 1024
+        return rss, peak
+    except Exception:
+        return None, None
 
 
 class SamplerSet:
     """Owns every background sampler thread and the shared sample lists."""
 
-    def __init__(self, cfg, container="", mysql_container="", log=None, t0=None):
-        self.cfg = cfg
+    def __init__(self, cfg, log=None, t0=None):
+        self.cfg = cfg or {}
         self.log = log
-        self.client_only = str((cfg or {}).get("runtime_environment") or "").strip().lower() == "windows"
-        self.container = container or ""
-        self.mysql_container = mysql_container or ""
-        if self.client_only:
-            # Windows runtime is client-only: no server CPU / cgroup memory /
-            # PSI / OOM collectors may run, regardless of the container names
-            # passed in. Clear them so every docker-gated thread stays off.
-            self.container = ""
-            self.mysql_container = ""
-            if self.log:
-                self.log.add("Windows runtime mode: server-side collectors "
-                             "disabled (client-only run).")
+        # Every run is client-only: the generator never sees server-side CPU
+        # or memory. Kept as an explicit attribute so the report and grading
+        # can state the vantage without inferring it.
+        self.client_only = True
         self.t0 = t0 if t0 is not None else time.perf_counter()
         self.stop_evt = threading.Event()
         self.lock = threading.Lock()
-        self.data = {"cgroup": [], "stats": [], "mysql": [], "health": [],
-                     "proc": []}
+        self.data = {"health": [], "generator": []}
         self.threads = []
-        self.proc_handles = []
         self.phase_ref = ["preflight"]
         self.probe_hz = [1.0]
-        self._procs = []
-        self._cgroup_collector = None
         self.proc_summary = {}
-        self.collector_mode = "none"
 
     def _say(self, msg):
         if self.log:
@@ -147,116 +106,6 @@ class SamplerSet:
 
     def _t(self):
         return round(time.perf_counter() - self.t0, 3)
-
-    # ------------------------------------------------------------ cgroup --
-    def _cgroup_stream(self):
-        """Single low-overhead collector process; PROCJSON -> proc series."""
-        if self.client_only:
-            return
-        if not self.container:
-            return
-        period = float(self.cfg.get("sample_period_s") or 1.0)
-        col = CgroupCollector(self.container, period=period, log=self.log,
-                              allow_legacy=True)
-        if not col.start():
-            self.collector_mode = "none"
-            return
-        self._cgroup_collector = col
-        self.collector_mode = col.mode
-        rec = None
-        try:
-            for line in col.lines():
-                if self.stop_evt.is_set():
-                    break
-                line = line.strip()
-                if line == "@@S":
-                    if rec is not None:
-                        self._push("cgroup", rec)
-                    rec = {"t": self._t(), "wall": utc(),
-                           "container": self.container,
-                           "phase": self.phase_ref[0]}
-                    continue
-                if line.startswith("PROCJSON "):
-                    rows = parse_proc_line(line)
-                    if rows and rec is not None:
-                        self._push("proc", {
-                            "t": rec["t"], "wall": rec["wall"],
-                            "phase": rec["phase"], "processes": rows,
-                        })
-                    continue
-                if rec is not None:
-                    try:
-                        parse_cg_line(rec, line)
-                    except Exception:
-                        pass
-        finally:
-            if rec is not None:
-                self._push("cgroup", rec)
-            col.stop()
-
-    # ------------------------------------------------------- docker stats --
-    def _stats_poller(self):
-        if self.client_only:
-            return
-        if not self.container:
-            return                      # direct mode: no docker stats needed
-        period = max(0.5, float(self.cfg.get("stats_period_s", 4)))
-        # `docker stats` streaming yields nothing into a pipe on Docker Desktop
-        # 29.8.2, so poll --no-stream instead. Parsing lives in
-        # collectors/docker_stats.py so it can be unit tested.
-        while not self.stop_evt.is_set():
-            rc, out, _ = dp.docker_out(
-                ["stats", "--no-stream", "--format", "{{json .}}"], timeout=25)
-            if rc == 0:
-                for line in (out or "").splitlines():
-                    rec = parse_stats_line(
-                        line, container=self.container, t=self._t(),
-                        wall=utc(), phase=self.phase_ref[0])
-                    if rec is not None:
-                        self._push("stats", rec)
-            self.stop_evt.wait(period)
-
-    # -------------------------------------------------------------- mysql --
-    def _mysql_stream(self):
-        if self.client_only:
-            return
-        if not self.mysql_container:
-            return
-        script = mysql_loop_script(10)
-        try:
-            p = subprocess.Popen(
-                ["docker", "exec", self.mysql_container, "sh", "-c", script],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                text=True, bufsize=1, encoding="utf-8", errors="replace")
-            self._procs.append(p)
-        except Exception as ex:
-            self._say("MySQL sampler failed to start: %s" % ex)
-            return
-        rec = None
-        try:
-            for line in p.stdout:
-                if self.stop_evt.is_set():
-                    break
-                line = line.strip()
-                if line == "@@M":
-                    if rec is not None:
-                        self._push("mysql", rec)
-                    rec = {"t": self._t(), "container": self.mysql_container,
-                           "phase": self.phase_ref[0]}
-                    continue
-                if rec is not None and "\t" in line:
-                    k, v = line.split("\t", 1)
-                    try:
-                        rec[k] = int(v)
-                    except Exception:
-                        pass
-        finally:
-            if rec is not None:
-                self._push("mysql", rec)
-            try:
-                p.terminate()
-            except Exception:
-                pass
 
     # ------------------------------------------------------------- health --
     def _health_probe(self):
@@ -276,19 +125,48 @@ class SamplerSet:
             })
             self.stop_evt.wait(1.0 / hz)
 
+    # ---------------------------------------------------------- generator --
+    def _generator_sampler(self):
+        """Measure the load generator itself: CPU time + working set.
+
+        A saturated generator inflates latency percentiles; these samples are
+        the evidence the report uses to show it did not happen.
+        """
+        period = max(0.5, float(self.cfg.get("sample_period_s") or 1.0))
+        prev_cpu = None
+        prev_t = None
+        while not self.stop_evt.is_set():
+            rec = {
+                "t": self._t(), "wall": utc(),
+                "phase": self.phase_ref[0],
+                "cpu_time_s": round(time.process_time(), 4),
+                "host_free_gb": host_free_gb(),
+            }
+            rss, peak = _self_memory()
+            if rss is not None:
+                rec["rss_mib"] = round(rss / 1048576.0, 2)
+            if peak is not None:
+                rec["peak_rss_mib"] = round(peak / 1048576.0, 2)
+            if prev_cpu is not None and prev_t is not None:
+                dt = rec["t"] - prev_t
+                du = rec["cpu_time_s"] - prev_cpu
+                if dt > 0 and du >= 0:
+                    # Fraction of ONE core (process_time sums all threads),
+                    # matching how target CPU% is normalised elsewhere.
+                    rec["cpu_pct"] = round(du / dt * 100.0, 2)
+            prev_cpu, prev_t = rec["cpu_time_s"], rec["t"]
+            self._push("generator", rec)
+            self.stop_evt.wait(period)
+
     # ------------------------------------------------------------ plumbing --
     def _push(self, key, rec):
         with self.lock:
             self.data[key].append(rec)
 
     def start(self):
-        dp.kill_orphans(self.container)
-        dp.kill_orphans(self.mysql_container)
         targets = [
-            ("hlc-cgroup", self._cgroup_stream),
-            ("hlc-stats", self._stats_poller),
-            ("hlc-mysql", self._mysql_stream),
             ("hlc-health", self._health_probe),
+            ("hlc-generator", self._generator_sampler),
         ]
         for name, fn in targets:
             t = threading.Thread(target=fn, name=name, daemon=True)
@@ -296,58 +174,26 @@ class SamplerSet:
             self.threads.append(t)
 
     def stop(self):
-        # Stop the v2 collector deterministically first (stdin handshake);
-        # only legacy shell loops need the marker-based orphan cleanup, because
-        # terminating the local `docker exec` client does not kill those.
         self.stop_evt.set()
-        col = self._cgroup_collector
-        if col is not None:
-            col.stop()
-        dp.kill_orphans(self.container)
-        dp.kill_orphans(self.mysql_container)
-        for p in self._procs:
-            try:
-                p.terminate()
-            except Exception:
-                pass
         for t in self.threads:
             t.join(timeout=6)
 
     def snapshot(self):
         with self.lock:
-            cg = self.data["cgroup"][-1] if self.data["cgroup"] else {}
-            st = self.data["stats"][-1] if self.data["stats"] else {}
+            gen = self.data["generator"][-1] if self.data["generator"] else {}
             hp = list(self.data["health"][-20:])
         ok = sum(1 for x in hp if 200 <= x.get("status", 0) < 400)
         return {
-            "anon_mib": cg.get("anon_mib", cg.get("rss_mib")),
-            "current_mib": cg.get("current_mib"),
-            "peak_mib": cg.get("peak_mib"),
-            "cpu_pct": cg.get("cpu_pct", st.get("cpu_pct_stats")),
-            "pids": cg.get("pids_current", st.get("pids")),
-            "host_free_gb": st.get("host_free_gb", host_free_gb()),
+            "gen_rss_mib": gen.get("rss_mib"),
+            "gen_cpu_pct": gen.get("cpu_pct"),
+            "host_free_gb": gen.get("host_free_gb", host_free_gb()),
             "probes": len(self.data["health"]),
             "recent_probe_ok_pct": round(100.0 * ok / len(hp), 1) if hp else None,
-            "cgroup_samples": len(self.data["cgroup"]),
+            "generator_samples": len(self.data["generator"]),
         }
 
     def finalize(self):
-        """Derive CPU% from cpu.stat usage_usec deltas, then return all series."""
+        """Return all series; generator CPU% is derived while sampling."""
         with self.lock:
-            cg = self.data["cgroup"]
-            self.proc_summary = summarize_proc_series(self.data["proc"])
-        prev_u, prev_t = None, None
-        for rec in cg:
-            u = rec.get("usage_usec")
-            if u is not None and prev_u is not None:
-                dt = rec["t"] - prev_t
-                du = u - prev_u
-                if dt > 0 and du >= 0:
-                    rec["cpu_pct"] = round(du / (dt * 1e6) * 100.0, 2)
-            if u is not None:
-                prev_u, prev_t = u, rec["t"]
-            # v1 fallback: rss is the anonymous-memory proxy
-            if "anon_mib" not in rec and "rss_mib" in rec:
-                rec["anon_mib"] = rec["rss_mib"]
-                rec["anon_proxy"] = "cgroup v1 rss"
+            self.proc_summary = {}
         return self.data

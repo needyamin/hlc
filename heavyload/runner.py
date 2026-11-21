@@ -6,10 +6,10 @@ from __future__ import annotations
 import json
 import os
 import platform
+import socket
 import sys
 
 from . import config as C
-from . import docker_probe as dp
 from . import adapters
 from . import grading, report
 from . import http_client
@@ -48,11 +48,29 @@ def discover_routes(cfg, candidates=None, limit=16):
     return found
 
 
+def generator_fingerprint():
+    """Stable identity of the machine generating the load.
+
+    Two runs may only be ranked against each other when this fingerprint
+    matches: same host, same platform, same CPU resources. It is the
+    client-only replacement for the instrumented-lab's environment gate.
+    """
+    return "|".join(filter(None, [
+        socket.gethostname() or "",
+        platform.system(),
+        platform.machine(),
+        str(os.cpu_count() or ""),
+    ]))
+
+
+def is_loopback(cfg):
+    host = str((cfg.get("_derived") or {}).get("host") or "")
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
 def preflight(cfg):
-    """Read-only checks: URL reachability, Docker, container, cgroup, host."""
+    """Read-only checks: URL reachability, health route, host headroom."""
     checks = []
-    env = str(cfg.get("runtime_environment") or "windows").strip().lower()
-    windows_mode = env == "windows"
     p = http_probe(cfg, cfg["_derived"]["base_path"])
     checks.append({
         "name": "Target reachable",
@@ -72,35 +90,18 @@ def preflight(cfg):
                    "%s -> %s (set health_path to a real 2xx route if needed)"
                    % (cfg["health_path"], hp["error"])),
     })
-
-    avail = dp.docker_available()
-    containers, cerr = dp.list_containers()
+    loop = is_loopback(cfg)
     checks.append({
-        "name": "Docker daemon",
-        "ok": avail["available"] or windows_mode,
-        "detail": ("server %s, %d running containers"
-                   % (avail["server_version"], len(containers))
-                   if avail["available"] else
-                   "not required in Windows runtime mode (client-only metrics)"
-                   if windows_mode else
-                   "not reachable: %s" % (cerr or "docker ps failed")),
-    })
-    container, method, note = dp.resolve_container(cfg, containers)
-    checks.append({
-        "name": "Container resolution",
-        "ok": bool(container) or cfg["mode"] == "direct",
-        "detail": "%s [%s]" % (note, method),
-    })
-    caps = dp.cgroup_caps(container) if container else {
-        "available": False, "reason": "no container selected"}
-    checks.append({
-        "name": "cgroup memory instrumentation",
-        "ok": caps.get("available", False) or windows_mode,
-        "detail": ("%s; %s" % (caps.get("version"), caps.get("canonical_metric"))
-                   if caps.get("available") else
-                   "not collected in Windows runtime mode: latency / throughput / "
-                   "error rate only, visibility = client_only"
-                   if windows_mode else caps.get("reason", "unavailable")),
+        "name": "Vantage point",
+        "ok": True,
+        "detail": ("client-only run against a loopback target: latency, "
+                   "throughput and error-rate metrics are real server "
+                   "responses observed from this machine; server-side CPU/"
+                   "memory is not visible and is never estimated"
+                   if loop else
+                   "client-only run against a REMOTE target: cross-run "
+                   "comparisons are disabled because network conditions "
+                   "cannot be held constant"),
     })
     free = host_free_gb()
     checks.append({
@@ -112,12 +113,9 @@ def preflight(cfg):
     return {
         "ok": all(x["ok"] for x in checks[:2]),
         "target_url": cfg["target_url"],
-        "runtime_environment": env,
+        "loopback_target": loop,
+        "generator_fingerprint": generator_fingerprint(),
         "checks": checks,
-        "container": container,
-        "container_method": method,
-        "containers": containers,
-        "cgroup": caps,
         "target_probe": p,
         "health_probe": hp,
         "host_free_gb": free,
@@ -127,32 +125,33 @@ def preflight(cfg):
 
 def environment_info(cfg, pf=None):
     pf = pf or {}
-    docker_ver = dp.docker_available().get("server_version") or "not available"
-    cg_ver = (pf.get("cgroup") or {}).get("version") or "none"
     target = cfg.get("target") or {}
     fairness = cfg.get("fairness") or {}
     return {
-        "docker_server_version": docker_ver,
-        "cgroup_interface": cg_ver,
-        "canonical_memory_metric": ((pf.get("cgroup") or {}).get("canonical_metric")
-                                    or "unavailable"),
-        "container_resolution": pf.get("container_method", "unknown"),
         "host_available_ram_gb": pf.get("host_free_gb", host_free_gb()),
         "host_cpu_count": os.cpu_count(),
         "platform": platform.platform(),
         "python": sys.version.split()[0],
         "generated_utc": utc(),
+        "vantage": "client_only",
         "fingerprint": {
             "image_digest": target.get("image_digest", ""),
             "runtime_version": target.get("runtime_version", ""),
-            "cgroup_version": cg_ver,
-            "docker_version": docker_ver,
+            # Historical v2 fingerprint fields; always empty in client-only
+            # runs (kept so archived instrumented runs stay schema-equal).
+            "cgroup_version": "",
+            "docker_version": "",
             "kernel": "",
             "cpu_model": cpu_model(),
             "pinned_cpus": parse_cpuset(fairness.get("cpuset_target", "")),
             "host_shared_cpu": True,
             "generator_pinned": False,
             "seed": fairness.get("seed"),
+            # Single-host comparability gate: both sides must match for two
+            # client-only runs to be ranked.
+            "generator_fingerprint": pf.get("generator_fingerprint",
+                                            generator_fingerprint()),
+            "target_host": (cfg.get("_derived") or {}).get("host") or "",
         },
     }
 
@@ -166,37 +165,17 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     """
     cfg = C.normalize(cfg)
     # Never reuse a cached preflight that belongs to a different target OR a
-    # different runtime environment: a Docker-lab preflight carries a resolved
-    # container, and reusing it after switching to Windows would silently
-    # instrument a container while publishing client_only results.
+    # different generator host: the fingerprint is the comparability gate.
     if (preflight_result
             and preflight_result.get("target_url") == cfg["target_url"]
-            and preflight_result.get("runtime_environment",
-                                     cfg["runtime_environment"])
-            == cfg["runtime_environment"]
-            and (not cfg.get("container")
-                 or preflight_result.get("container") == cfg["container"])):
+            and preflight_result.get("generator_fingerprint",
+                                     generator_fingerprint())
+            == generator_fingerprint()):
         pf = preflight_result
     else:
         pf = preflight(cfg)
-    container = pf.get("container") or ""
     pf["target_url"] = cfg["target_url"]       # repair older cached preflights
-    mysql_container = str(cfg.get("mysql_container") or "")
-    requested_mode = cfg.get("benchmark_mode", "auto")
-    if cfg.get("runtime_environment") == "windows":
-        # The exclusive switch is authoritative. Force a fully client-only run
-        # even when an advanced override or a cached preflight still names a
-        # container: never publish live_blackbox + cgroup-grade hybrids.
-        container = ""
-        mysql_container = ""
-        pf = dict(pf)
-        pf["container"] = ""
-        pf["container_method"] = "windows-runtime"
-        mode = "live_blackbox"
-    elif requested_mode == "auto":
-        mode = "docker_lab" if container else "live_blackbox"
-    else:
-        mode = requested_mode
+    mode = "live_blackbox"
     run_id = "run-" + stamp()
 
     # ---- fail fast on a dead target ----------------------------------------
@@ -213,8 +192,11 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
             or "nodename nor servname" in _tp_err
             or "Name or service not known" in _tp_err):
         msg = ("Preflight failed: target %s is unreachable (%s). Start the "
-               "target web application first, then re-run. No run directory "
-               "or report was generated for a dead target."
+               "target web application first, then re-run — e.g. this tool's "
+               "practice target: python scripts/demo_target.py --port 8090, "
+               "or a spec-defined target: python scripts/native_target.py "
+               "<site-id> start. No run directory or report was generated "
+               "for a dead target."
                % (cfg["target_url"], _tp_err or "connection failed"))
         if log:
             log.add(msg, "error")
@@ -226,19 +208,13 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     C.save_config(os.path.join(run_dir, "config.json"), cfg)
     atomic_json(os.path.join(run_dir, "preflight.json"), pf)
     if log:
-        log.add("Runtime environment: %s (mode=%s, benchmark_mode=%s, "
-                "runtime comparison sources=%s)"
-                % (cfg["runtime_environment"], cfg["mode"],
-                   cfg["benchmark_mode"],
-                   "Windows+Docker"
-                   if cfg["runtime_comparison"]["include_container"]
-                   else "Windows only"))
+        log.add("Vantage: client-only (mode=%s) | profile=%s"
+                % (mode, cfg["profile"]))
         log.add("Preflight: %s" % "; ".join(
             "%s=%s" % (x["name"], "OK" if x["ok"] else "WARN")
             for x in pf["checks"]))
 
-    bench = Benchmark(cfg, run_dir, log=log, container=container,
-                      mysql_container=mysql_container,
+    bench = Benchmark(cfg, run_dir, log=log,
                       env_info=environment_info(cfg, pf), run_id=run_id)
     if bench_holder is not None:
         bench_holder["bench"] = bench
@@ -297,10 +273,14 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     fp = env.setdefault("fingerprint", {})
     fp["generator_pinned"] = getattr(bench, "generator_pinned", False)
     if getattr(bench, "samplers", None) is not None:
-        fp["collector_mode"] = bench.samplers.collector_mode
+        fp["collector_mode"] = bench.samplers.client_only and "health+generator"
+    # Loopback targets share one machine: identical profiles across languages
+    # are rankable with explicit caveats; remote targets are never ranked.
+    visibility = "client_only_same_host" if pf.get("loopback_target") \
+        else "client_only"
     ensure_current(
         results, mode=mode, target=cfg.get("target") or {},
-        fingerprint=fp,
+        fingerprint=fp, visibility=visibility,
         has_runtime=bool(series.get("runtime_series")),
         has_browser=bool(series.get("browser_series")))
     s = results.get("summary") or {}
@@ -309,9 +289,33 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     http["dispatch_delay_p95_ms"] = (s.get("dispatch_delay_ms") or {}).get("p95")
     http["as_scheduled_p95_ms"] = (s.get("as_scheduled_latency") or {}).get("p95")
     if log:
-        log.add("Mode=%s visibility=%s schema=v%d collector=%s"
+        log.add("Mode=%s visibility=%s schema=v%d"
                 % (results["benchmark_mode"], results["visibility"],
-                   results["schema_version"], fp.get("collector_mode", "n/a")))
+                   results["schema_version"]))
+
+    # ---- data-quality checks (measured evidence integrity) -----------------
+    try:
+        from . import quality as Q
+        results["quality"] = Q.check_run(results)
+        if log:
+            n_bad = len([c for c in results["quality"].get("checks", [])
+                         if c.get("status") == "warn"])
+            log.add("Quality checks: %d total, %d warnings"
+                    % (len(results["quality"].get("checks", [])), n_bad))
+    except Exception as ex:
+        results["quality"] = {"status": "error", "checks": [],
+                              "warnings": [str(ex)]}
+
+    # ---- scalability & concurrency analysis --------------------------------
+    try:
+        from . import scalability as SC
+        results["scalability"] = SC.analyze(results)
+        if log:
+            log.add("Scalability: %s" % (
+                (results["scalability"] or {}).get("classification")
+                or "insufficient step evidence"))
+    except Exception as ex:
+        results["scalability"] = {"status": "error", "warnings": [str(ex)]}
 
     # ---- cross-language runtime comparison (on by default, failure-safe) --
     # Runs after the HTTP schedule so a comparison problem can never lose the
@@ -324,7 +328,9 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
                 log.add("Running cross-language runtime comparison "
                         "(%s repeats per variant, pinned checksums)"
                         % rcfg.get("repeats", 5))
-            rc_data = RC.run(cfg, run_dir, log=log, container=container)
+            # write_html=False: the comparison is embedded in report.html —
+            # a run produces ONE report page, no standalone comparison page.
+            rc_data = RC.run(cfg, run_dir, log=log, write_html=False)
             results["runtime_comparison"] = RC.summarize(rc_data)
         except Exception as ex:
             results["runtime_comparison"] = {
@@ -334,6 +340,18 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
             }
             if log:
                 log.add("Runtime comparison failed: %s" % ex, "warn")
+
+    # ---- technology suitability assessment ---------------------------------
+    if (cfg.get("suitability") or {}).get("enabled", True):
+        try:
+            from . import suitability as SU
+            su = SU.build(results, cfg, run_dir, log=log, write_html=False)
+            results["suitability"] = SU.summarize(su)
+        except Exception as ex:
+            results["suitability"] = {"status": "error",
+                                      "warnings": [str(ex)]}
+            if log:
+                log.add("Suitability analysis failed: %s" % ex, "warn")
 
     results_path = os.path.join(run_dir, "results.json")
     atomic_json(results_path, results)

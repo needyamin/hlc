@@ -1,15 +1,18 @@
 # Heavy Load Checker
 
 A standard-library-only Python HTTP load tester with a local web UI. It drives
-a phased workload at a target and, when the **Docker** runtime environment is
-selected, measures real server-side CPU, memory, cgroup pressure, OOM events
-and per-process usage.
+a phased workload at any HTTP target from your host and automatically runs a
+**cross-language runtime comparison** (14 languages) plus a **technology
+suitability assessment** on every run.
 
-> **Key fact:** for a live website you do not control, an external client can
-> never see server CPU/RAM. Those runs are labelled `client_only` and are not
-> comparable with Docker lab runs. **Windows runtime mode is the default and is
-> exactly such a client-only run.** See
-> [docs/benchmark-modes.md](docs/benchmark-modes.md).
+> **Vantage point (the one thing to understand first):** every run is
+> *client-only*. Latency, throughput, error taxonomy and availability are real
+> observations made over the wire; server-side CPU, memory and OOM state are
+> **not visible from outside and are never estimated** — those SLOs are graded
+> `N/A - insufficient evidence`. What IS measured on your side is the load
+> generator itself (CPU + working set), so client-side saturation can never
+> hide inside the percentiles. Container instrumentation existed in v1 and was
+> removed in v2 (restore it from git history if ever needed).
 
 ## Quickstart
 
@@ -21,266 +24,69 @@ opens <http://127.0.0.1:8787/> (Windows). Or:
 ```bash
 python server.py --open              # web UI
 python scripts/demo_target.py        # real local target on http://127.0.0.1:8090/ (/, /catalog, /health)
-python cli.py --profile smoke        # headless, ~33 s, Windows runtime (default)
-python cli.py --runtime-env docker --profile smoke   # add container cgroup metrics
-python cli.py --runtime-comparison   # language-runtime speed only, no HTTP load
-python cli.py --campaign benchmarks/lang-runtime.json   # Phase 2 batch campaign
-python cli.py --compare run-a run-b --output out/       # compare + export runs
+python cli.py --profile smoke        # headless, ~33 s
+python cli.py --profile heavy        # heavy load: ramp to C=200, sustained, spike
+python cli.py --profile stress       # stress conditions: ramp to C=400, long soak
+python cli.py --verify-sources       # checksum-verify every detected toolchain
+python cli.py --runtime-comparison   # language benchmark only, no HTTP load
+python cli.py --campaign benchmarks/lang-runtime.json   # multi-site campaign
+python cli.py --compare run-a run-b --output out/       # compare runs
 python selftest.py                   # end-to-end regression test
 python -m unittest discover -s tests -v
 ```
 
-Requirements: Python 3.10+ (tested on 3.13). No pip install is required.
-**Docker Desktop is only needed when you choose the Docker runtime
-environment** — the default Windows mode needs no Docker at all.
+Requirements: Python 3.10+ (tested on 3.15). No pip install. No Docker.
 
-## Runtime environment: Windows (default) or Docker
+## What a run produces
 
-A single **exclusive** switch, `config.runtime_environment`, decides both
-(a) which installed runtimes the language load check measures and (b) which
-vantage point the HTTP load test measures from. There is no second,
-contradictory instrumentation selector.
+Every run writes into `runs/<run-id>/`:
 
-| | `windows` **(default)** | `docker` |
-|---|---|---|
-| Installed host runtimes (PHP / Python / Node / Rust / Spid3r) | **checked** | checked (kept as baselines) |
-| Spid3r binary inside the container | not measured | **added** to the host baselines |
-| HTTP metrics | latency, throughput, error taxonomy, availability | same, **plus** cgroup CPU / RAM, PSI, OOM, restarts |
-| `visibility` | `client_only` | `full_server` (when a container resolves) |
-| `mode` / `benchmark_mode` | `direct` / `live_blackbox` | `auto` / `auto` → `docker_lab` |
-| Docker daemon needed | **no** | yes |
-| S5 / S6 memory-recovery SLOs | `N/A` — insufficient evidence | graded from cgroup bytes |
-| `include_windows` / `include_container` | `true` / `false` | `true` / `true` |
+| Artifact | Contents |
+|---|---|
+| `report.html` | **THE report — one self-contained page covering everything**: executive summary, methodology, KPIs, S1–S9 SLO scorecard, time-series charts, **scalability & concurrency analysis**, phase/route breakdowns, generator resource evidence, data-quality & accuracy, strengths/weaknesses/limitations, findings, go/no-go, config & environment — **plus the full language-runtime comparison** (every language and every Spid3r engine variant, checksum-gated medians with dispersion, slowdown ratios, pairwise matrix) **and the full suitability assessment** (ranking, dedicated Spid3r subject-language report, per-criterion provenance). Wide tables scroll horizontally inside their cards. No JS, no external resources. |
+| `results.json` | Full v2 metric document (schema-stable, additive migration for archived v1 runs) |
+| `runtime_comparison.json` | Raw comparison data: every repeat, per-variant measured peak memory & CPU time, checksums (the rendered tables live inside `report.html`) |
+| `suitability.json` | Raw suitability data: weights, per-criterion scores + provenance (rendered inside `report.html`) |
+| `raw.jsonl` | One line per request — every published number traces back to it |
+| `config.json`, `preflight.json`, `status.json`, `stage2_verdict.json` | Reproducibility & live telemetry |
 
-**Docker is additive, not a replacement.** Host PHP and Python rows are the
-measuring stick for every slowdown ratio, so they stay in both modes. Docker
-rows are tagged `source: "docker"` in the JSON and labelled "Docker container"
-in the HTML, with an explicit note that they run in a *different environment*
-from the host baselines — their ratios are approximate, never an
-apples-to-apples deployment benchmark.
+## Language runtime comparison (runs on every benchmark by default)
 
-Change it in one place:
-
-```bash
-python cli.py --runtime-env docker --profile smoke   # CLI, one run
-python cli.py --runtime-env windows --profile smoke  # back to the default
-```
-
-or use the **Runtime environment** radio card at the top of the web UI (Windows
-is pre-selected; the Docker option is disabled when no daemon is reachable).
-Or edit `config.json`:
-
-```json
-"runtime_environment": "windows",
-"mode": "direct",
-"benchmark_mode": "live_blackbox",
-"runtime_comparison": { "include_windows": true, "include_container": false }
-```
-
-A saved config predating the switch is **inferred once** from legacy Docker
-signals (`include_container`, `benchmark_mode: docker_lab` /
-`instrumented_live`, or `mode: docker`) so existing Docker setups keep working;
-a fresh config always defaults to Windows. Because a saved config carries the
-derived keys explicitly, always change the switch through `--runtime-env` or
-the web UI: those rewrite all four derived keys together. Setting
-`runtime_environment` alone leaves a half-configured state.
-
-**Dead targets are refused, not measured:** if the preflight target probe gets
-`ConnectionRefused` or a DNS failure, the run aborts before any run directory
-or report is created — measuring nothing and grading it would only produce a
-report full of empty numbers. (A target that is merely slow still runs: real
-timeouts are real observations.)
-
-**Windows overrides are rejected, not silently ignored:** `--mode auto|docker`
-or `--benchmark-mode docker_lab|instrumented_live` combined with the Windows
-runtime environment exits with `use --runtime-env docker`. Internally, the
-runner also forces `container=""`, `mode="live_blackbox"`, a hard sampler gate
-and `visibility="client_only"`, so a Windows run can never publish cgroup
-numbers or be ranked against a Docker lab run.
-
-## Architecture at a glance
-
-Six diagrams in [docs/diagrams/](docs/diagrams/) explain the system end to end.
-They are plain inline-styled SVG — no JavaScript, no CDN, no build step — so
-they render in this README, in an IDE, and offline. Start with 01 and 02; the
-rest are reference material. Prefer one page? Open the
-[single-file gallery](docs/diagrams/index.html) (all six inlined, works offline).
-**Contributing?** That gallery is also the developer reference: developer notes
-under each diagram, plus commands, module map, config keys, the v2 result
-schema, S1–S9 SLOs, artifacts, the web API, the language-benchmark contract,
-extension seams, invariants and a glossary.
-
-| # | Diagram | Question it answers |
-|---|---|---|
-| 01 | [System context](docs/diagrams/01-system-context.svg) | What can this tool actually measure? |
-| 02 | [Module architecture](docs/diagrams/02-architecture.svg) | Which module does what? |
-| 03 | [Run lifecycle](docs/diagrams/03-run-lifecycle.svg) | What happens during one run? |
-| 04 | [Data flow](docs/diagrams/04-data-flow.svg) | Where does every published number come from? |
-| 05 | [Modes & comparability](docs/diagrams/05-benchmark-modes.svg) | When may two runs be ranked against each other? |
-| 06 | [Runtime comparison](docs/diagrams/06-runtime-comparison.svg) | How is the language benchmark kept honest? |
-
-### 01 — System context
-
-![System context: Windows host, network boundary, and Docker / WSL2 target](docs/diagrams/01-system-context.svg)
-
-**Read it as:** the load generator lives on your Windows host and only ever
-speaks HTTP to the target. Server CPU, RAM, cgroup pressure and OOM events are
-read *inside* the container via `docker exec` / `docker stats`. If that second
-path is unavailable (a public website), the run is `client_only` — you get real
-latency, but no server metrics. This boundary is the single most important
-thing to understand before quoting any number.
-
-### 02 — Module architecture
-
-![Module architecture: entry points, runner, engine, collectors, grading and outputs](docs/diagrams/02-architecture.svg)
-
-**Read it as:** `cli.py`, `server.py` and `selftest.py` all call the same
-`runner.run_benchmark()`. It fans out to the load engine, the sampler/collector
-stack and optional adapters, then merges everything into one `results{}` dict.
-Grading, schema normalisation, the language comparison and the HTML report all
-consume that dict. Dashed boxes are optional — a missing Docker daemon, runtime
-endpoint or headless Chrome degrades to `unavailable`, it never fails a run.
-
-### 03 — Run lifecycle
-
-![One run: eight orchestration steps and the eight HTTP phases of the smoke profile](docs/diagrams/03-run-lifecycle.svg)
-
-**Read it as:** every profile uses the same eight phases — idle baseline,
-warm-up, ramp, sustained, spike, soak, zero-load cooldown, availability
-re-probe — only the durations change. The idle and cooldown phases exist so
-memory growth (S5/S6) means something. Note step 7: the language comparison
-runs **after** the HTTP result is aggregated, so a comparison failure can never
-cost you a load-test run.
-
-### 04 — Data flow
-
-![Data flow: raw.jsonl and sampler series become graded metrics and artifacts](docs/diagrams/04-data-flow.svg)
-
-**Read it as:** one `raw.jsonl` line per request, one cgroup/procfs sample per
-tick, and one `TIME_US` per language variant. Each is aggregated, graded
-against SLOs S1–S9, normalised to the v2 schema, then published. Nothing is
-estimated: if a source is missing, the field is labelled `unavailable`. The
-v1 → v2 migration is additive, so archived reports still render.
-
-### 05 — Modes and the comparability gate
-
-![Benchmark modes and the schema.can_compare hard rule](docs/diagrams/05-benchmark-modes.svg)
-
-**Read it as:** the mode is decided by what you control, not by what you wish
-you could measure. Before any leaderboard, `schema.can_compare()` demands the
-same `benchmark_mode`, `visibility`, `schema_version` and `workload_class`, and
-rejects `client_only` outright. A failure produces `comparable=False` with a
-reason — never a ranking. On Windows, also remember the generator and the WSL2
-VM share physical cores.
-
-### 06 — Language runtime comparison
-
-![Runtime comparison pipeline: pinned workloads, checksum gate, ratios and artifacts](docs/diagrams/06-runtime-comparison.svg)
-
-**Read it as:** three pinned workloads are written in five languages, built
-into per-workload variants (in Windows runtime mode these are the **installed host
-runtimes**; choosing Docker **adds** the real binary inside the container), and
-timed in-process over N repeats. Any variant whose checksum differs is
-**rejected**, so no simulated or estimated value can reach a report. These
-milliseconds measure language-runtime compute — do not compare them with the
-RPS or p99 from the HTTP load test.
-
-To change a diagram, edit [docs/diagrams/generate.py](docs/diagrams/generate.py)
-and run `python docs/diagrams/generate.py`; the SVGs are generated files.
-See [docs/diagrams/README.md](docs/diagrams/README.md) for the full index.
-
-## Language runtime comparison (runs on EVERY benchmark by default)
-
-This is the "test my language" feature. Alongside the HTTP load test, every run
-executes **five identical, checksum-verified workloads** in every available
-runtime and compares Spid3r against PHP, Python, Node and Rust. With the
-default **Windows** runtime environment this load-checks the *installed* host
-toolchains only; selecting **Docker** adds the deployed container variants
-while keeping the host baselines (see the table above):
+Five identical, **checksum-verified** workloads run in every detected runtime.
+A variant that prints a wrong result is REJECTED and never published — no
+simulated numbers can reach a report, ever.
 
 | ID | Workload | What it exercises |
 |---|---|---|
 | A | Prime counting, N = 50,000 | pure interpreter integer loops |
 | B | JSON round-trip, 200 rows x 600 rounds | native serializers + parsed-field loops |
-| C | String-keyed map lookups, 64 keys x 100,000 | route / config / session style lookups |
-| D | Text template building, 50,000 rows | string allocation / churn, GC pressure, log-style formatting |
-| E | Integer matmul, 128 x 128 (transposed B) | tight numeric loops, nested indexing, integer exactness |
+| C | String-keyed map lookups, 64 keys x 100,000 | route / config / session lookups |
+| D | Text template building, 50,000 rows | string churn, GC pressure, formatting |
+| E | Integer matmul, 128 x 128 (transposed B) | tight numeric loops, exact i64 arithmetic |
 
-Spid3r variants measured: tree-walk, bytecode VM, VM `--no-opt`, bytecode
-`exec`, `build --release`, **and, only when Docker is selected, the real
-Spid3r binary inside the Docker container** (so you compare the version you
-actually deploy, not just the host one). A Rust `-O` reference binary is built
-for every workload that ships a `.rs` source (A, C, D, E; workload B has none
-on purpose — Rust's stdlib has no JSON serializer, so a native-serializer
-comparison there would be false). Output per run directory:
+Supported runtimes (auto-detected; missing toolchains are skipped with a
+warning, never faked):
 
-```
-runtime_comparison.json    full raw data: every repeat, stats, versions, ratios
-runtime_comparison.html    self-contained report (charts, tables, method, quality, standards)
-sources/                   the exact generated programs in every language
-```
+**Spid3r** (5 engine variants: tree-walk, VM, VM `--no-opt`, bytecode exec,
+native `--release`), **Python, JavaScript/Node, TypeScript, PHP, Ruby, Java,
+Kotlin, Go, C#/.NET, Swift, Rust, C, C++**.
 
-The report includes a **Measurement quality** section (per-variant CV, timer-
-resolution flags, repeat counts) and a **Standards alignment** section (ISO/IEC
-80000-3 units, SPEC-style median-of-repeated-runs protocol, checksum
-correctness gate, full disclosure of raw data).
+Workload B exists only where the language's standard library ships a JSON
+serializer (Java/Kotlin/C/C++/Rust are documented `not applicable` — a
+hand-rolled parser would not be the native-serializer comparison B measures).
 
-The main `report.html` gains **section 11** with the slowdown summary, and the
-web UI shows direct links to the two new artifacts.
+Per variant the report publishes: in-process `TIME_US` (startup excluded),
+median of N repeats with full dispersion (stdev, CV%, IQR, t-based 95% CI of
+the mean, bootstrap 95% CI of the median), wall clock, and **OS-measured peak
+working set + CPU time** (Windows `GetProcessMemoryInfo`/`GetProcessTimes`,
+POSIX `wait4` rusage — or honest `unavailable`).
 
 ```bash
-# Fast path: ONLY the language comparison (store may be down, no HTTP traffic)
-python cli.py --runtime-comparison
-#   -> runs/runtime-comparison/   (always the latest result, overwritten)
-#   -> runs/runtime-<timestamp>/ (immutable archive of that run)
-
-# Normal run: HTTP load test + comparison (default)
-python cli.py --profile smoke
-
-# Skip it for one run, or shorten it while iterating
-python cli.py --profile smoke --no-runtime-comparison
-python cli.py --runtime-comparison --runtime-repeats 1
+python cli.py --verify-sources   # compile+run every detected toolchain
+                                 # against the pinned checksums: a table
 ```
 
-Configure in `config.json`:
-
-```json
-"runtime_comparison": {
-  "enabled": true,
-  "repeats": 5,
-  "container": "",
-  "include_windows": true,
-  "include_container": false,
-  "include_native": true,
-  "include_references": true,
-  "write_sources": true,
-  "timeout_s": 300,
-  "workloads": ["prime", "json", "map"]
-}
-```
-
-`include_windows: true` is what makes the *default* run load-check the
-installed host toolchains. `include_container: false` is the default; choosing
-the Docker runtime environment sets it to `true` **without** turning
-`include_windows` off, because `summarize_data()` computes every slowdown ratio
-against the host PHP / Python baselines. `container` empty means use
-`config.container`, or auto-resolve it from the published Docker port — only
-relevant in Docker mode. Missing toolchains are skipped with a warning — they
-are never simulated. Archived v1 comparison documents have no recorded
-provenance; their rows are labelled from evidence (Docker keys / "(Docker)"
-labels) and otherwise `unavailable`, never invented as Windows.
-
-**Honesty rules baked into the code:** workload constants are pinned; every
-variant must print the exact expected checksum or it is **rejected and never
-published**; timing is in-process (startup excluded); the median of N repeats
-is reported with full dispersion (stdev, CV%, IQR, min/max) and 95% confidence
-intervals; run-to-run noise and timer-resolution floors are flagged, not
-hidden; Spid3r only exposes `now_ms()`, so all workloads are sized well above
-1 ms resolution. This measures **language-runtime compute speed**, not
-end-to-end web-framework performance — do not compare these numbers with RPS
-from the HTTP load test.
-
-Expected verified checksums (change a constant and the run is rejected):
+Expected verified checksums (a mismatched variant is rejected, never timed):
 
 ```
 A  prime   RESULT 5133 121013308
@@ -290,106 +96,102 @@ D  text    RESULT 1295428 300465975
 E  matmul  RESULT -1985 -40
 ```
 
-## Benchmark modes (derived from the runtime switch)
+## Heavy-load testing profiles
 
-| `benchmark_mode` | Server CPU/RAM | Comparable across languages | Selected by |
+| Profile | Duration | Peak C | Purpose |
 |---|---|---|---|
-| `live_blackbox` **(default)** | No — `visibility: client_only` | **No** | `runtime_environment: windows` |
-| `docker_lab` | Yes | **Yes** | `runtime_environment: docker` + a resolving container |
-| `instrumented_live` | Via your own Prometheus/APM agent (future adapter) | Possible | advanced override |
+| `smoke` | ~33 s | 20 | fast validation of an unknown target |
+| `quick` | ~3.5 min | 100 | meaningful ramp + sustained + spike |
+| `heavy` | ~5.5 min | 200 | heavy load: ramp 25→150, sustained C=150, break-point spike |
+| `stress` | ~10.5 min | 400 | stress: ramp to C=300, sustained C=300, long soak |
+| `standard` | ~24 min | 300 | the original frozen Spid3r schedule |
 
-The `Runtime environment` switch is the primary control; `mode` and
-`benchmark_mode` are **derived** from it and are shown read-only in the web UI.
-`auto` means `docker_lab` when a container resolves, otherwise client-only
-`live_blackbox`. Advanced users can still set `config.benchmark_mode` directly,
-but a Windows run is always forced back to client-only internally (no cgroup
-collectors, `visibility = client_only`, S5/S6 graded `N/A`). A
-`live_blackbox` result can never be ranked against a `docker_lab` result.
+Every profile uses the same eight phases — idle baseline, warm-up, ramp,
+sustained, spike, soak, zero-load cooldown, availability re-probe — so memory
+of the generator and recovery behaviour mean the same thing in every run.
+Guardrails (generator working-set ceiling, host RAM floor, error-rate ceiling,
+consecutive-failure breaker) can abort a run early; an aborted run is graded
+*right-censored*, never passed silently.
 
-## Folder layout
+## Scalability analysis
 
-```
-cli.py  server.py  selftest.py  start.bat  config.json   entry points / live config
-heavyload/            core package
-  engine.py  runner.py  config.py  grading.py  report.py  util.py
-  runtime_comparison.py   cross-language runtime benchmark + standalone report
-  paths.py  http_client.py  latency.py  targetspec.py   shared helpers
-  collectors/   cgroup / procfs / docker stats / health / mysql
-  schema/       v2 metric schema + additive v1 migration
-  adapters/     per-language runtime metrics (Python reference + 5 endpoint adapters)
-  browser/      optional Chrome DevTools Protocol page metrics
-ui/             vanilla-JS single-page UI (1 Hz polling)
-targets/        per-site specs + examples (future campaigns)
-benchmarks/     campaign files (Phase 2 — `lang-runtime.json` example)
-docs/           architecture, schema, modes, roadmap, screenshot
-  diagrams/     six core SVG diagrams + generate.py (shown in this README)
-scripts/        reversible cleanup + Docker lab helpers
-tests/          stdlib unittest suite
-runs/           generated results (gitignored)
-_archive/       verified backup of legacy sources and past runs (gitignored)
-```
+The engine records one time window per concurrency level (per step inside
+ramp/spike phases, per phase otherwise) and derives — from measured requests
+only — the throughput-vs-concurrency curve, RPS-per-worker efficiency, a
+**knee point** (last level before marginal throughput collapses or p95
+inflates beyond 2x the best level) and a conservative classification
+(`linear / sublinear / plateau / degraded`). Fewer than two measured levels
+reports `insufficient_evidence` instead of guessing.
+
+## Data integrity and accuracy
+
+* Checksum gates (above) — wrong results are rejected, never published.
+* `heavyload/quality.py` inspects every run: malformed raw lines, sampler
+  coverage gaps, percentile monotonicity, runt phases, generator saturation,
+  latency-bounds sanity. Findings are labelled `ok / warn / fail /
+  insufficient_evidence` and surface in grading and the report.
+* Percentiles carry the coordinated-omission view (`as_scheduled_latency`) and
+  generator dispatch lag is measured separately so client scheduling delay is
+  never blamed on the target.
+* Timer-resolution floors and noisy (CV > 15%) variants are flagged in the
+  comparison report, not hidden.
+
+## Comparability: when may two runs be ranked?
+
+| Situation | Comparable? |
+|---|---|
+| Archived `docker_lab` runs (v1) with server evidence | yes, against each other |
+| Loopback targets, same host + same profile (`client_only_same_host`) | **yes — single-host client-side comparison** (explicit caveats) |
+| Different generator host / target host / profile / schema | no, with a stated reason |
+| Remote-target client-only runs | never (uncontrolled network) |
+
+`schema.can_compare()` enforces this before any leaderboard; a refusal prints
+its reason instead of producing a misleading ranking.
 
 ## Measuring a website written in language X
 
 1. Write a spec in `targets/<site-id>.json` (start from
-   `targets/examples/python-fastapi.json`). Keep the **same routes, payloads and
-   resource limits** for every language.
-2. `python scripts/lab_up.py <site-id>` (dry run) then `--build --apply`.
-3. Set `config.fairness.cpuset_generator` to cores **different** from the
-   spec's `resource_limits.cpuset_cpus`.
-4. Run at least 3 repeats and compare medians.
-5. `python scripts/lab_down.py <site-id> --apply` when done.
-
-`targets/_schema.json` documents every field.
-
-## Running a multi-language campaign (Phase 2)
-
-A *campaign* runs the **same workload** against N sites (each a
-`targets/*.json` spec) so you can compare runtimes fairly. Each site gets
-warm-up passes (discarded) + `repeat_count` measured passes; the campaign
-reports the **median across repeats** so one noisy run does not decide the
-ranking.
-
-```bash
-# 1. Build & start every target container (see scripts/lab_up.py)
-python scripts/lab_up.py python-fastapi-hello --build --apply
-python scripts/lab_up.py node-express-hello    --build --apply
-
-# 2. Run the campaign (writes benchmarks/<id>/campaign.json + report.html)
-python cli.py --campaign benchmarks/lang-runtime.json
-
-# 3. Compare any existing runs by id (writes out/campaign.json + .csv/.json)
-python cli.py --compare run-a run-b --output out/
-```
-
-In the web UI: the **Campaigns** card starts/stops a campaign and shows live
-per-site progress + history; the **Past runs** table has checkboxes and a
-**Compare** / **Export CSV** bar that opens the comparison report.
-
-> **Honesty guard:** runs are only ranked when every selected run is measured
-> from the same vantage point — `docker_lab` mode with server CPU/RAM visible.
-> `live_blackbox` (client-only) runs, or runs with a different mode / schema /
-> workload class, are flagged **not comparable** and never produce a misleading
-> leaderboard. See [docs/phase2-roadmap.md](docs/phase2-roadmap.md).
+   `targets/examples/python-demo.json`). Keep the **same routes, payloads and
+   expectations** for every language.
+2. Start it natively: `python scripts/native_target.py <site-id> start`
+   (uses `native.start_cmd`, waits for `health_path`; `stop` ends it by PID
+   record).
+3. Run at least 3 repeats (`repeat_count` in the spec) and compare medians —
+   one noisy run never decides a ranking.
+4. `python cli.py --campaign benchmarks/lang-runtime.json` runs the campaign
+   and writes `benchmarks/<id>/campaign.json` + `report.html` + leaderboard
+   CSV/JSON.
 
 ## Cleanup / safety
 
-`scripts/archive_legacy.py` copies legacy sources and past runs into `_archive/`
-and verifies every file by SHA-256 before anything is removed. Caches go to the
-**Windows Recycle Bin**, never a permanent delete. Nothing is deleted without
-`--confirm`.
+`scripts/archive_legacy.py` still handles the legacy archive workflow
+(manifest / backup / verify / recycle-caches — nothing deletes without
+`--confirm`).
 
-```bash
-python scripts/archive_legacy.py manifest
-python scripts/archive_legacy.py backup
-python scripts/archive_legacy.py verify
-python scripts/archive_legacy.py recycle-caches --confirm
-```
+## Architecture at a glance
+
+Six diagrams in [docs/diagrams/](docs/diagrams/) explain the system end to
+end (plain inline-styled SVG, no JS, no CDN, works offline). Start with 01 and
+02; the [single-file gallery](docs/diagrams/index.html) inlines all six plus a
+developer reference (module map, config keys, schema, SLOs, API, invariants).
+
+| # | Diagram | Question it answers |
+|---|---|---|
+| 01 | [System context](docs/diagrams/01-system-context.svg) | What can this tool actually measure? |
+| 02 | [Module architecture](docs/diagrams/02-architecture.svg) | Which module does what? |
+| 03 | [Run lifecycle](docs/diagrams/03-run-lifecycle.svg) | What happens during one run? |
+| 04 | [Data flow](docs/diagrams/04-data-flow.svg) | Where does every published number come from? |
+| 05 | [Comparability gate](docs/diagrams/05-benchmark-modes.svg) | When may two runs be ranked? |
+| 06 | [Runtime comparison](docs/diagrams/06-runtime-comparison.svg) | How is the language benchmark kept honest? |
+
+To change a diagram, edit [docs/diagrams/generate.py](docs/diagrams/generate.py)
+and run `python docs/diagrams/generate.py`; the SVGs are generated files.
 
 ## Documentation
 
-- [docs/diagrams/](docs/diagrams/) — the six core architecture diagrams shown above (+ how to regenerate them)
-- [docs/benchmark-modes.md](docs/benchmark-modes.md) — why Docker is required, Windows/WSL2 caveats
+- [docs/comparability.md](docs/comparability.md) — when runs may be ranked, and why client-only is the honest default
+- [docs/suitability.md](docs/suitability.md) — the suitability criteria, weights and provenance rules
 - [docs/metric-schema.md](docs/metric-schema.md) — v2 result fields and units
 - [docs/architecture.md](docs/architecture.md) — module map and data flow
-- [docs/phase2-roadmap.md](docs/phase2-roadmap.md) — multi-language campaigns (Phase 2 status + deferred work)
+- [docs/phase2-roadmap.md](docs/phase2-roadmap.md) — campaigns (built) + deferred work
+- [docs/diagrams/](docs/diagrams/) — architecture diagrams (regenerate with `python docs/diagrams/generate.py`)

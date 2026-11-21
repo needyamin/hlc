@@ -28,7 +28,6 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from heavyload import config as C  # noqa: E402
-from heavyload import docker_probe as dp  # noqa: E402
 from heavyload import runner  # noqa: E402
 from heavyload import campaign as CAM  # noqa: E402
 from heavyload import compare as CMP  # noqa: E402
@@ -217,19 +216,18 @@ def presets_payload():
 
 
 def runtime_environments_payload():
-    """Exclusive switch options + the coherent preset each one applies."""
+    """Vantage options (v2: one client-only environment; UI keeps the list
+    shape so archived clients render)."""
     out = []
     for name in C.RUNTIME_ENVIRONMENTS:
-        preset = C.RUNTIME_ENVIRONMENT_DEFAULTS[name]
         out.append({
             "value": name,
             "label": C.RUNTIME_ENVIRONMENT_LABELS[name],
-            "default": name == C.DEFAULTS["runtime_environment"],
-            "mode": preset["mode"],
-            "benchmark_mode": preset["benchmark_mode"],
-            "include_windows": preset["include_windows"],
-            "include_container": preset["include_container"],
-            "client_only": name == "windows",
+            "default": True,
+            "mode": "direct",
+            "benchmark_mode": "live_blackbox",
+            "include_windows": True,
+            "client_only": True,
         })
     return out
 
@@ -364,7 +362,6 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/favicon.ico":
                 return self._send(204, b"")
             if p == "/api/bootstrap":
-                containers, cerr = dp.list_containers()
                 return self._json({
                     "ok": True,
                     "config": C.public_config(STATE["config"]),
@@ -373,9 +370,6 @@ class Handler(BaseHTTPRequestHandler):
                     "presets": presets_payload(),
                     "runtime_environments": runtime_environments_payload(),
                     "runtime_environment_default": C.DEFAULTS["runtime_environment"],
-                    "containers": containers,
-                    "container_error": cerr,
-                    "docker": dp.docker_available(),
                     "status": current_status(),
                     "reports": runner.list_runs(ROOT, cfg=STATE["config"]),
                     "preflight": STATE.get("preflight"),
@@ -391,10 +385,6 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/config":
                 return self._json({"ok": True,
                                    "config": C.public_config(STATE["config"])})
-            if p == "/api/containers":
-                rows, err = dp.list_containers()
-                return self._json({"ok": True, "containers": rows,
-                                   "error": err, "docker": dp.docker_available()})
             if p == "/api/reports":
                 return self._json({"ok": True,
                                    "reports": runner.list_runs(
@@ -481,39 +471,21 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/config":
                 incoming = body.get("config", body)
                 old_cfg = STATE["config"]
-                old_env = old_cfg.get("runtime_environment", "windows")
-                # A typo must never silently reclassify a Docker run as
-                # Windows (or vice versa). File-based migration self-heals,
-                # but an explicit API value is validated instead.
+                # The runtime environment is fixed (client-only host). A
+                # legacy "docker" value is rejected with a clear message
+                # instead of being silently reclassified.
                 if "runtime_environment" in incoming:
                     raw_env = str(incoming.get("runtime_environment")
                                   or "").strip().lower()
                     if raw_env not in C.RUNTIME_ENVIRONMENTS:
                         return self._err(
-                            "runtime_environment must be one of %s"
+                            "runtime_environment must be one of %s "
+                            "(container instrumentation was removed in v2)"
                             % ", ".join(C.RUNTIME_ENVIRONMENTS), 400)
-                else:
-                    raw_env = old_env
                 merged = dict(old_cfg)
                 merged.update(incoming)
                 merged = {k: v for k, v in merged.items()
                           if not k.startswith("_")}
-                # The UI posts a full config clone, so a selector change
-                # arrives with four STALE derived keys from the old
-                # environment. Drop them and re-apply the coherent preset.
-                # When the selector is unchanged, advanced overrides are
-                # preserved untouched (no unconditional re-derivation).
-                if raw_env != old_env:
-                    merged.pop("mode", None)
-                    merged.pop("benchmark_mode", None)
-                    rc = dict(merged.get("runtime_comparison") or {})
-                    rc.pop("include_container", None)
-                    rc.pop("include_windows", None)
-                    merged["runtime_comparison"] = rc
-                    try:
-                        merged = C.apply_runtime_environment(merged, raw_env)
-                    except Exception as ex:
-                        return self._err("configuration error: %s" % ex, 400)
                 norm, err = C.validate(merged)
                 if err:
                     return self._err("configuration error: %s" % err, 400)
@@ -537,16 +509,10 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as ex:
                     return self._err(str(ex), 400)
                 # A profile switch rewrites ONLY the schedule / concurrency
-                # ceiling. Guard the exclusive selector and its derived keys
-                # explicitly so a legacy config (or a future normalize()
-                # change) can never silently flip Windows -> Docker.
+                # ceiling; keep the runtime identity keys stable.
                 for k in ("runtime_environment", "mode", "benchmark_mode"):
                     if k in before:
                         norm[k] = before[k]
-                rc_before = before.get("runtime_comparison") or {}
-                for k in ("include_container", "include_windows"):
-                    if k in rc_before:
-                        norm["runtime_comparison"][k] = rc_before[k]
                 with STATE["lock"]:
                     STATE["config"] = norm
                     STATE["preflight"] = None
@@ -562,8 +528,6 @@ class Handler(BaseHTTPRequestHandler):
                 pf = runner.preflight(cfg)
                 with STATE["lock"]:
                     STATE["preflight"] = pf
-                    if pf.get("container") and not cfg.get("container"):
-                        STATE["config"]["container"] = pf["container"]
                 STATE["log"].add("Preflight: " + "; ".join(
                     "%s=%s" % (x["name"], "OK" if x["ok"] else "WARN")
                     for x in pf["checks"]))

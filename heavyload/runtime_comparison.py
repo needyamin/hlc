@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Cross-language runtime comparison (Spid3r vs PHP / Python / Node / Rust).
+"""Cross-language runtime comparison (Spid3r vs 13 baseline/reference runtimes).
 
-This is the "test my language" feature. It runs three *identical* checksum-
-verified workloads in every available language runtime and writes, into the
-run directory:
+This is the "test my language" feature. It runs *identical* checksum-verified
+workloads in every available language runtime and writes, into the run
+directory:
 
-    runtime_comparison.json    full raw data (all repeats, min/max, versions)
+    runtime_comparison.json    full raw data (all repeats, min/max, versions,
+                               measured peak memory + CPU time per variant)
     runtime_comparison.html    self-contained report (no JS, no CDN)
     sources/                   the exact generated programs, for provenance
+
+Supported runtimes (detected automatically, skipped when absent):
+    Spid3r, Python, Node/JavaScript, TypeScript, PHP, Ruby, Java, Kotlin,
+    Go, C#/.NET, Swift, Rust, C, C++.
 
 Design rules (deliberate, do not weaken):
   * Workload constants are PINNED. Changing them changes the checksum, and a
@@ -17,12 +22,14 @@ Design rules (deliberate, do not weaken):
     RESULT differs is discarded. No simulated / estimated numbers, ever.
   * Timing is IN-PROCESS (startup excluded). Spid3r only has now_ms(), so all
     workloads are sized to run well above 1 ms.
+  * Memory (peak working set) and CPU time of each variant are MEASURED by the
+    OS via heavyload.procmetrics, or reported as unavailable - never guessed.
   * Any missing toolchain is skipped with a warning, never faked.
   * This module never raises into the caller; failures become status + warning.
 
 Standalone use:
     from heavyload import runtime_comparison as RC
-    data = RC.run(cfg, out_dir, log=log, container="spid3rweb-app")
+    data = RC.run(cfg, out_dir, log=log)
 """
 from __future__ import annotations
 
@@ -30,6 +37,7 @@ import html
 import json
 import math
 import os
+import pathlib
 import random
 import re
 import shutil
@@ -41,8 +49,10 @@ import tempfile
 import time
 from datetime import datetime, timezone
 
-from .util import atomic_json, utc
+from .util import atomic_json, cpu_model, utc
 from . import util
+from .comparison_sources import LANG_MODULES, module_by_key
+from . import procmetrics
 
 # v2 adds runtime_environment / config_meta flags and a "source" tag per
 # variant row. Old v1 documents still render (every new field has a default),
@@ -53,20 +63,22 @@ EXE = ".exe" if os.name == "nt" else ""
 DEFAULT_OPTIONS = {
     "enabled": True,
     "repeats": 5,
-    "container": "",           # "" => cfg["container"] or auto-resolve
     "include_windows": True,   # installed host toolchains (checked by default)
-    "include_container": False,  # Docker variants only when Docker is chosen
     "include_native": True,
     "include_references": True,
     "write_sources": True,
     "timeout_s": 300,
+    "build_timeout_s": 900,
     "workloads": ["prime", "json", "map", "text", "matmul"],
 }
 
 RUNTIME_ENVIRONMENT_LABELS = {
-    "windows": "Windows - installed runtimes",
-    "docker": "Docker - container + host baselines",
+    "windows": "Host (installed runtimes, client-only)",
 }
+
+# Display line used in the HTML subtitle (derived from the registry).
+_LANG_LINE = " / ".join(
+    m.LABEL for m in LANG_MODULES if m.KEY != "matrix")
 
 # Constants are pinned so results stay comparable between runs. If you change
 # any of these you MUST recompute and update EXPECTED below.
@@ -135,581 +147,10 @@ WORKLOAD_INFO = {
 }
 
 # --------------------------------------------------------------------------
-# Workload A: prime counting
+# Workload sources live in heavyload/comparison_sources/ - one module per
+# language, each carrying the same pinned algorithms and the native-serializer
+# JSON workload where the language's standard library provides one.
 # --------------------------------------------------------------------------
-PRIME_MATRIX = r"""fn is_prime(n: int) -> bool {
-    if n < 2 { return false; }
-    let d = 2;
-    while d * d <= n { if n % d == 0 { return false; } d += 1; }
-    return true;
-}
-fn main() {
-    let t0 = now_ms();
-    let i = 2;
-    let count = 0;
-    let checksum = 0;
-    while i < 50000 {
-        if is_prime(i) { count += 1; checksum += i; }
-        i += 1;
-    }
-    let us = (now_ms() - t0) * 1000;
-    println("RESULT " + string(count) + " " + string(checksum));
-    println("TIME_US " + string(us));
-    return 0;
-}
-"""
-
-PRIME_PY = r"""import time
-def is_prime(n):
-    if n < 2: return False
-    d = 2
-    while d * d <= n:
-        if n % d == 0: return False
-        d += 1
-    return True
-t0 = time.perf_counter_ns()
-i, count, checksum = 2, 0, 0
-while i < 50000:
-    if is_prime(i):
-        count += 1; checksum += i
-    i += 1
-us = (time.perf_counter_ns() - t0) // 1000
-print("RESULT", count, checksum)
-print("TIME_US", us)
-"""
-
-PRIME_JS = r"""function isPrime(n) {
-  if (n < 2) return false;
-  let d = 2;
-  while (d * d <= n) { if (n % d === 0) return false; d += 1; }
-  return true;
-}
-const t0 = process.hrtime.bigint();
-let i = 2, count = 0, checksum = 0;
-while (i < 50000) { if (isPrime(i)) { count += 1; checksum += i; } i += 1; }
-const us = Number((process.hrtime.bigint() - t0) / 1000n);
-console.log('RESULT ' + count + ' ' + checksum);
-console.log('TIME_US ' + us);
-"""
-
-PRIME_PHP = r"""<?php
-function is_prime($n) {
-    if ($n < 2) return false;
-    $d = 2;
-    while ($d * $d <= $n) { if ($n % $d == 0) return false; $d += 1; }
-    return true;
-}
-$t0 = hrtime(true);
-$i = 2; $count = 0; $checksum = 0;
-while ($i < 50000) { if (is_prime($i)) { $count += 1; $checksum += $i; } $i += 1; }
-$us = intdiv(hrtime(true) - $t0, 1000);
-echo "RESULT $count $checksum\n";
-echo "TIME_US $us\n";
-"""
-
-PRIME_RS = r"""use std::time::Instant;
-fn is_prime(n: i64) -> bool {
-    if n < 2 { return false; }
-    let mut d: i64 = 2;
-    while d * d <= n { if n % d == 0 { return false; } d += 1; }
-    true
-}
-fn main() {
-    let t0 = Instant::now();
-    let mut i: i64 = 2;
-    let mut count: i64 = 0;
-    let mut checksum: i64 = 0;
-    while i < 50000 { if is_prime(i) { count += 1; checksum += i; } i += 1; }
-    let us = t0.elapsed().as_micros();
-    println!("RESULT {} {}", count, checksum);
-    println!("TIME_US {}", us);
-}
-"""
-
-# --------------------------------------------------------------------------
-# Workload B: JSON API round-trip
-# --------------------------------------------------------------------------
-JSON_MATRIX = r"""fn build_rows(n: int) {
-    let rows = list();
-    let i = 0;
-    while i < n {
-        rows.push(map("id", i, "sku", "SKU-" + string(i), "qty", (i % 7) + 1, "price", (i * 37) % 1000));
-        i += 1;
-    }
-    return rows;
-}
-fn main() {
-    let rows = build_rows(200);
-    let t0 = now_ms();
-    let total = 0;
-    let last_len = 0;
-    let r = 0;
-    while r < 600 {
-        let s = json_write(rows);
-        let back = json_parse(s);
-        last_len = s.len();
-        let i = 0;
-        while i < back.len() {
-            let row = back[i];
-            total = total + row["price"] * row["qty"] + row["id"];
-            i += 1;
-        }
-        r += 1;
-    }
-    let us = (now_ms() - t0) * 1000;
-    println("RESULT " + string(total) + " " + string(last_len));
-    println("TIME_US " + string(us));
-    return 0;
-}
-"""
-
-JSON_PY = r"""import json, time
-def build_rows(n):
-    return [{"id": i, "sku": "SKU-" + str(i), "qty": (i % 7) + 1,
-             "price": (i * 37) % 1000} for i in range(n)]
-rows = build_rows(200)
-t0 = time.perf_counter_ns()
-total = 0
-last_len = 0
-for r in range(600):
-    s = json.dumps(rows, separators=(",", ":"))
-    back = json.loads(s)
-    last_len = len(s)
-    for row in back:
-        total += row["price"] * row["qty"] + row["id"]
-us = (time.perf_counter_ns() - t0) // 1000
-print("RESULT", total, last_len)
-print("TIME_US", us)
-"""
-
-JSON_JS = r"""function buildRows(n) {
-  const rows = [];
-  for (let i = 0; i < n; i++) {
-    rows.push({id: i, sku: "SKU-" + i, qty: (i % 7) + 1, price: (i * 37) % 1000});
-  }
-  return rows;
-}
-const rows = buildRows(200);
-const t0 = process.hrtime.bigint();
-let total = 0, lastLen = 0;
-for (let r = 0; r < 600; r++) {
-  const s = JSON.stringify(rows);
-  const back = JSON.parse(s);
-  lastLen = s.length;
-  for (let i = 0; i < back.length; i++) {
-    const row = back[i];
-    total += row.price * row.qty + row.id;
-  }
-}
-const us = Number((process.hrtime.bigint() - t0) / 1000n);
-console.log("RESULT " + total + " " + lastLen);
-console.log("TIME_US " + us);
-"""
-
-JSON_PHP = r"""<?php
-function build_rows($n) {
-    $rows = [];
-    for ($i = 0; $i < $n; $i++) {
-        $rows[] = ["id" => $i, "sku" => "SKU-" . $i,
-                   "qty" => ($i % 7) + 1, "price" => ($i * 37) % 1000];
-    }
-    return $rows;
-}
-$rows = build_rows(200);
-$t0 = hrtime(true);
-$total = 0;
-$last_len = 0;
-for ($r = 0; $r < 600; $r++) {
-    $s = json_encode($rows);
-    $back = json_decode($s, true);
-    $last_len = strlen($s);
-    foreach ($back as $row) {
-        $total += $row["price"] * $row["qty"] + $row["id"];
-    }
-}
-$us = intdiv(hrtime(true) - $t0, 1000);
-echo "RESULT $total $last_len\n";
-echo "TIME_US $us\n";
-"""
-
-# --------------------------------------------------------------------------
-# Workload C: string-keyed map lookups
-# --------------------------------------------------------------------------
-MAP_MATRIX = r"""fn build_table(n: int) {
-    let t = map();
-    let i = 0;
-    while i < n {
-        t["k" + string(i)] = (i * 37 + 11) % 997;
-        i += 1;
-    }
-    return t;
-}
-fn main() {
-    let t = build_table(64);
-    let t0 = now_ms();
-    let acc = 0;
-    let r = 0;
-    while r < 100000 {
-        let key = "k" + string(r % 64);
-        acc = acc + t[key];
-        r += 1;
-    }
-    let us = (now_ms() - t0) * 1000;
-    println("RESULT " + string(acc) + " 100000");
-    println("TIME_US " + string(us));
-    return 0;
-}
-"""
-
-MAP_PY = r"""import time
-def build_table(n):
-    return {"k" + str(i): (i * 37 + 11) % 997 for i in range(n)}
-t = build_table(64)
-t0 = time.perf_counter_ns()
-acc = 0
-for r in range(100000):
-    acc += t["k" + str(r % 64)]
-us = (time.perf_counter_ns() - t0) // 1000
-print("RESULT", acc, 100000)
-print("TIME_US", us)
-"""
-
-MAP_JS = r"""function buildTable(n) {
-  const t = {};
-  for (let i = 0; i < n; i++) t["k" + i] = (i * 37 + 11) % 997;
-  return t;
-}
-const t = buildTable(64);
-const t0 = process.hrtime.bigint();
-let acc = 0;
-for (let r = 0; r < 100000; r++) acc += t["k" + (r % 64)];
-const us = Number((process.hrtime.bigint() - t0) / 1000n);
-console.log("RESULT " + acc + " 100000");
-console.log("TIME_US " + us);
-"""
-
-MAP_PHP = r"""<?php
-function build_table($n) {
-    $t = [];
-    for ($i = 0; $i < $n; $i++) $t["k" . $i] = ($i * 37 + 11) % 997;
-    return $t;
-}
-$t = build_table(64);
-$t0 = hrtime(true);
-$acc = 0;
-for ($r = 0; $r < 100000; $r++) {
-    $acc += $t["k" . ($r % 64)];
-}
-$us = intdiv(hrtime(true) - $t0, 1000);
-echo "RESULT $acc 100000\n";
-echo "TIME_US $us\n";
-"""
-
-# Rust uses its native std HashMap, exactly like the other runtimes use their
-# native dicts/arrays — same "native container" comparison level. (Workload B
-# has no Rust source on purpose: Rust's stdlib ships no JSON serializer, and a
-# hand-rolled parser would NOT be the native-serializer comparison B measures.)
-MAP_RS = r"""use std::collections::HashMap;
-use std::time::Instant;
-fn main() {
-    let mut t: HashMap<String, i64> = HashMap::new();
-    for i in 0..64i64 {
-        t.insert(format!("k{}", i), (i * 37 + 11) % 997);
-    }
-    let t0 = Instant::now();
-    let mut acc: i64 = 0;
-    for r in 0..100000i64 {
-        acc += t[&format!("k{}", r % 64)];
-    }
-    let us = t0.elapsed().as_micros();
-    println!("RESULT {} 100000", acc);
-    println!("TIME_US {}", us);
-}
-"""
-
-# --------------------------------------------------------------------------
-# Workload D: text template building (string churn / allocation pressure)
-# --------------------------------------------------------------------------
-TEXT_MATRIX = r"""fn main() {
-    let t0 = now_ms();
-    let total_chars = 0;
-    let acc = 0;
-    let i = 0;
-    while i < 50000 {
-        let s = "user:" + string(i) + "|score:" + string((i * 37) % 100)
-              + "|tag:t" + string(i % 13);
-        total_chars = total_chars + s.len();
-        acc = (acc * 31 + s.len()) % 1000000007;
-        i += 1;
-    }
-    let us = (now_ms() - t0) * 1000;
-    println("RESULT " + string(total_chars) + " " + string(acc));
-    println("TIME_US " + string(us));
-    return 0;
-}
-"""
-
-TEXT_PY = r"""import time
-ROWS = 50000
-t0 = time.perf_counter_ns()
-total_chars = 0
-acc = 0
-for i in range(ROWS):
-    s = ("user:" + str(i) + "|score:" + str((i * 37) % 100)
-         + "|tag:t" + str(i % 13))
-    total_chars += len(s)
-    acc = (acc * 31 + len(s)) % 1000000007
-us = (time.perf_counter_ns() - t0) // 1000
-print("RESULT", total_chars, acc)
-print("TIME_US", us)
-"""
-
-TEXT_JS = r"""const ROWS = 50000;
-const t0 = process.hrtime.bigint();
-let totalChars = 0, acc = 0;
-for (let i = 0; i < ROWS; i++) {
-  const s = "user:" + i + "|score:" + ((i * 37) % 100) + "|tag:t" + (i % 13);
-  totalChars += s.length;
-  acc = (acc * 31 + s.length) % 1000000007;
-}
-const us = Number((process.hrtime.bigint() - t0) / 1000n);
-console.log("RESULT " + totalChars + " " + acc);
-console.log("TIME_US " + us);
-"""
-
-TEXT_PHP = r"""<?php
-$ROWS = 50000;
-$t0 = hrtime(true);
-$total_chars = 0;
-$acc = 0;
-for ($i = 0; $i < $ROWS; $i++) {
-    $s = "user:" . $i . "|score:" . (($i * 37) % 100) . "|tag:t" . ($i % 13);
-    $total_chars += strlen($s);
-    $acc = ($acc * 31 + strlen($s)) % 1000000007;
-}
-$us = intdiv(hrtime(true) - $t0, 1000);
-echo "RESULT $total_chars $acc\n";
-echo "TIME_US $us\n";
-"""
-
-TEXT_RS = r"""use std::time::Instant;
-fn main() {
-    let rows: i64 = 50000;
-    let t0 = Instant::now();
-    let mut total_chars: i64 = 0;
-    let mut acc: i64 = 0;
-    let mut i: i64 = 0;
-    while i < rows {
-        let s = format!("user:{}|score:{}|tag:t{}", i, (i * 37) % 100, i % 13);
-        total_chars += s.len() as i64;
-        acc = (acc * 31 + s.len() as i64) % 1000000007;
-        i += 1;
-    }
-    let us = t0.elapsed().as_micros();
-    println!("RESULT {} {}", total_chars, acc);
-    println!("TIME_US {}", us);
-}
-"""
-
-# --------------------------------------------------------------------------
-# Workload E: integer matrix multiply (numeric loops, nested indexing)
-# Transposed B is built UNTIMED so every language multiplies the same way:
-# C[i][k] = sum_j A[i][j] * Bt[k][j]. Integer-only, so checksums are exact.
-# --------------------------------------------------------------------------
-MATMUL_MATRIX = r"""fn build_a(n: int) {
-    let a = list();
-    let i = 0;
-    while i < n {
-        let row = list();
-        let j = 0;
-        while j < n {
-            row.push((i * 7 + j * 13) % 19 - 9);
-            j += 1;
-        }
-        a.push(row);
-        i += 1;
-    }
-    return a;
-}
-fn build_bt(n: int) {
-    let bt = list();
-    let k = 0;
-    while k < n {
-        let row = list();
-        let j = 0;
-        while j < n {
-            row.push((k * 11 + j * 3) % 17 - 8);
-            j += 1;
-        }
-        bt.push(row);
-        k += 1;
-    }
-    return bt;
-}
-fn main() {
-    let n = 128;
-    let a = build_a(n);
-    let bt = build_bt(n);
-    let t0 = now_ms();
-    let total = 0;
-    let diag = 0;
-    let i = 0;
-    while i < n {
-        let ai = a[i];
-        let k = 0;
-        while k < n {
-            let btk = bt[k];
-            let s = 0;
-            let j = 0;
-            while j < n {
-                s = s + ai[j] * btk[j];
-                j += 1;
-            }
-            total = total + s;
-            if i == k { diag = diag + s; }
-            k += 1;
-        }
-        i += 1;
-    }
-    let us = (now_ms() - t0) * 1000;
-    println("RESULT " + string(total) + " " + string(diag));
-    println("TIME_US " + string(us));
-    return 0;
-}
-"""
-
-MATMUL_PY = r"""import time
-N = 128
-A = [[(i * 7 + j * 13) % 19 - 9 for j in range(N)] for i in range(N)]
-Bt = [[(k * 11 + j * 3) % 17 - 8 for j in range(N)] for k in range(N)]
-t0 = time.perf_counter_ns()
-total = 0
-diag = 0
-i = 0
-while i < N:
-    Ai = A[i]
-    k = 0
-    while k < N:
-        Btk = Bt[k]
-        s = 0
-        j = 0
-        while j < N:
-            s += Ai[j] * Btk[j]
-            j += 1
-        total += s
-        if i == k:
-            diag += s
-        k += 1
-    i += 1
-us = (time.perf_counter_ns() - t0) // 1000
-print("RESULT", total, diag)
-print("TIME_US", us)
-"""
-
-MATMUL_JS = r"""const N = 128;
-const A = [], Bt = [];
-for (let i = 0; i < N; i++) {
-  A.push([]);
-  for (let j = 0; j < N; j++) A[i].push((i * 7 + j * 13) % 19 - 9);
-}
-for (let k = 0; k < N; k++) {
-  Bt.push([]);
-  for (let j = 0; j < N; j++) Bt[k].push((k * 11 + j * 3) % 17 - 8);
-}
-const t0 = process.hrtime.bigint();
-let total = 0, diag = 0;
-for (let i = 0; i < N; i++) {
-  const Ai = A[i];
-  for (let k = 0; k < N; k++) {
-    const Btk = Bt[k];
-    let s = 0;
-    for (let j = 0; j < N; j++) s += Ai[j] * Btk[j];
-    total += s;
-    if (i === k) diag += s;
-  }
-}
-const us = Number((process.hrtime.bigint() - t0) / 1000n);
-console.log("RESULT " + total + " " + diag);
-console.log("TIME_US " + us);
-"""
-
-MATMUL_PHP = r"""<?php
-$N = 128;
-$A = [];
-$Bt = [];
-for ($i = 0; $i < $N; $i++) {
-    $row = [];
-    for ($j = 0; $j < $N; $j++) $row[] = ($i * 7 + $j * 13) % 19 - 9;
-    $A[] = $row;
-}
-for ($k = 0; $k < $N; $k++) {
-    $row = [];
-    for ($j = 0; $j < $N; $j++) $row[] = ($k * 11 + $j * 3) % 17 - 8;
-    $Bt[] = $row;
-}
-$t0 = hrtime(true);
-$total = 0;
-$diag = 0;
-for ($i = 0; $i < $N; $i++) {
-    $Ai = $A[$i];
-    for ($k = 0; $k < $N; $k++) {
-        $Btk = $Bt[$k];
-        $s = 0;
-        for ($j = 0; $j < $N; $j++) $s += $Ai[$j] * $Btk[$j];
-        $total += $s;
-        if ($i === $k) $diag += $s;
-    }
-}
-$us = intdiv(hrtime(true) - $t0, 1000);
-echo "RESULT $total $diag\n";
-echo "TIME_US $us\n";
-"""
-
-MATMUL_RS = r"""use std::time::Instant;
-fn main() {
-    let n: usize = 128;
-    let mut a: Vec<Vec<i64>> = vec![vec![0i64; n]; n];
-    let mut bt: Vec<Vec<i64>> = vec![vec![0i64; n]; n];
-    for i in 0..n {
-        for j in 0..n { a[i][j] = (i as i64 * 7 + j as i64 * 13) % 19 - 9; }
-    }
-    for k in 0..n {
-        for j in 0..n { bt[k][j] = (k as i64 * 11 + j as i64 * 3) % 17 - 8; }
-    }
-    let t0 = Instant::now();
-    let mut total: i64 = 0;
-    let mut diag: i64 = 0;
-    for i in 0..n {
-        let ai = &a[i];
-        for k in 0..n {
-            let btk = &bt[k];
-            let mut s: i64 = 0;
-            for j in 0..n { s += ai[j] * btk[j]; }
-            total += s;
-            if i == k { diag += s; }
-        }
-    }
-    let us = t0.elapsed().as_micros();
-    println!("RESULT {} {}", total, diag);
-    println!("TIME_US {}", us);
-}
-"""
-
-SOURCES = {
-    "prime": {"matrix": PRIME_MATRIX, "py": PRIME_PY, "js": PRIME_JS,
-              "php": PRIME_PHP, "rs": PRIME_RS},
-    "json": {"matrix": JSON_MATRIX, "py": JSON_PY, "js": JSON_JS,
-             "php": JSON_PHP},
-    "map": {"matrix": MAP_MATRIX, "py": MAP_PY, "js": MAP_JS,
-            "php": MAP_PHP, "rs": MAP_RS},
-    "text": {"matrix": TEXT_MATRIX, "py": TEXT_PY, "js": TEXT_JS,
-             "php": TEXT_PHP, "rs": TEXT_RS},
-    "matmul": {"matrix": MATMUL_MATRIX, "py": MATMUL_PY, "js": MATMUL_JS,
-               "php": MATMUL_PHP, "rs": MATMUL_RS},
-}
-
-BASELINE_KEYS = ("php", "python", "node", "rust")
-
 
 # --------------------------------------------------------------------------
 # Small helpers
@@ -791,6 +232,17 @@ def _log(log, msg, level="info"):
             log.add("[runtime-compare] %s" % msg)
         except Exception:
             pass
+
+
+def _measure(cmd, cwd=None, timeout=60):
+    """Run one variant repeat with measured resources (never raises).
+
+    Wraps procmetrics.run_measured with command resolution (Windows .bat/.cmd
+    shims) and the MSYS path-conversion guards used everywhere else.
+    """
+    m = procmetrics.run_measured(_resolve_cmd(cmd), cwd=cwd, timeout=timeout,
+                                 env=_env())
+    return m
 
 
 def geo(values):
@@ -897,194 +349,179 @@ def row_stats(runs_ms, group=""):
     }
 
 
-def resolve_container(cfg, explicit=""):
-    """Best-effort container name for the Spid3r 1.0.0 in-Docker runs."""
-    name = explicit or str(cfg.get("container") or "")
-    if name:
-        return name
-    try:
-        from . import docker_probe as dp
-        containers, _ = dp.list_containers()
-        found, _, _ = dp.resolve_container(cfg, containers)
-        return found or ""
-    except Exception:
-        return ""
+def _safe_rel(rel):
+    """Validate a registry-generated relative filename.
+
+    Registry filenames are constants, but generated file names must never be
+    able to leave the work/sources directories: absolute paths, ``..``
+    segments and escapes are rejected before anything is opened.
+    """
+    if not rel or os.path.isabs(rel):
+        raise ValueError("unsafe relative path: %r" % rel)
+    native = rel.replace("/", os.sep)
+    if ".." in native.split(os.sep) or native.startswith(os.sep):
+        raise ValueError("unsafe relative path: %r" % rel)
+    return native
 
 
-def detect_tools(cfg, opts):
+def _write_source(base, rel, text):
+    """Write one generated workload source under ``base`` (traversal-safe)."""
+    native = _safe_rel(rel)
+    dest = pathlib.Path(base) / native
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8", newline="\n")
+    return str(dest)
+
+
+def _under(base, native_rel):
+    """base + validated relative path; verifies containment explicitly."""
+    p = os.path.normpath("%s%s%s" % (base, os.sep, native_rel))
+    base_abs = os.path.abspath(base) + os.sep
+    if not os.path.abspath(p + os.sep).startswith(base_abs):
+        raise ValueError("path %r escapes %r" % (native_rel, base))
+    return p
+
+
+def _resolve_cmd(cmd):
+    """Resolve a command for subprocess execution of PATH toolchains.
+
+    shutil.which finds .bat/.cmd shims (kotlinc.bat, tsc.cmd), but
+    CreateProcess cannot execute batch files directly - they must go through
+    cmd.exe. Everything else passes through unchanged.
+    """
+    if not cmd:
+        return list(cmd)
+    head = cmd[0]
+    if os.path.isabs(head) or os.sep in head:
+        resolved = head if os.path.isfile(head) else (shutil.which(head) or head)
+    else:
+        resolved = shutil.which(head) or head
+    ext = os.path.splitext(resolved)[1].lower()
+    if ext in (".bat", ".cmd"):
+        return ["cmd", "/d", "/c", resolved] + list(cmd[1:])
+    return [resolved] + list(cmd[1:])
+
+
+# Toolchain probes. java/kotlin print their version to STDERR, so the
+# version extractor falls back to the error stream.
+_PROBES = [
+    ("spid3r", ["spid3r", "--version"]),
+    ("php", ["php", "-r", "echo PHP_VERSION;"]),
+    ("python", [sys.executable, "-c",
+                "import sys;print(sys.version.split()[0])"]),
+    ("node", ["node", "--version"]),
+    ("rustc", ["rustc", "--version"]),
+    ("java", ["java", "-version"]),
+    ("javac", ["javac", "--version"]),
+    ("kotlinc", ["kotlinc", "-version"]),
+    ("gcc", ["gcc", "-dumpfullversion", "-dumpversion"]),
+    ("gpp", ["g++", "-dumpfullversion", "-dumpversion"]),
+    ("clang", ["clang", "--version"]),
+    ("clangpp", ["clang++", "--version"]),
+    ("dotnet", ["dotnet", "--version"]),
+    ("go", ["go", "version"]),
+    ("ruby", ["ruby", "-v"]),
+    ("swiftc", ["swiftc", "--version"]),
+    ("tsc", ["tsc", "--version"]),
+]
+
+
+def detect_tools(cfg, opts=None):
     """Probe toolchains. Missing entries are False, never guessed."""
+    opts = opts or {}
     tools = {}
-    probes = [
-        ("spid3r", ["spid3r", "--version"]),
-        ("php", ["php", "-r", "echo PHP_VERSION;"]),
-        ("python", [sys.executable, "-c",
-                    "import sys;print(sys.version.split()[0])"]),
-        ("node", ["node", "--version"]),
-        ("rustc", ["rustc", "--version"]),
-    ]
-    for key, cmd in probes:
-        rc, out, err, _ = _call(cmd, timeout=20)
-        tools[key] = {"available": rc == 0,
-                      "version": (_clean_version(out) if key == "spid3r"
-                                  else _first_line(out)) if rc == 0 else "",
-                      "path": (shutil.which(cmd[0]) or "") if rc == 0 else ""}
-        if rc != 0 and key != "rustc":
+    for key, cmd in _PROBES:
+        rc, out, err, _ = _call(_resolve_cmd(cmd), timeout=60)
+        version = ""
+        if rc == 0:
+            version = (_clean_version(out) if key == "spid3r"
+                       else (_first_line(out) or _first_line(err)))
+        tools[key] = {
+            "available": rc == 0,
+            "version": version if rc == 0 else "",
+            "path": (shutil.which(cmd[0]) or "") if rc == 0 else ""}
+        if rc != 0:
             tools.setdefault("_errors", {})[key] = _first_line(err)
 
-    container = ""
-    # Windows mode never touches Docker: no resolve, no docker exec, no cp.
-    if opts.get("include_container", False):
-        container = resolve_container(cfg, opts.get("container", ""))
-    tools["container"] = {"available": False, "name": container,
-                          "version": "", "spid3r": False}
-    if container:
-        rc, out, err, _ = _call(
-            ["docker", "exec", container, "spid3r", "--version"], timeout=30)
-        tools["container"] = {
-            "available": rc == 0, "name": container,
-            "version": _clean_version(out) if rc == 0 else "",
-            "spid3r": rc == 0,
-            "error": "" if rc == 0 else _first_line(err),
-        }
+    # C/C++ fallbacks: use clang/clang++ when gcc/g++ are absent.
+    if not tools.get("gcc", {}).get("available") and \
+            tools.get("clang", {}).get("available"):
+        tools["gcc"] = dict(tools["clang"])
+        tools["gcc"]["via"] = "clang"
+    if not tools.get("gpp", {}).get("available") and \
+            tools.get("clangpp", {}).get("available"):
+        tools["gpp"] = dict(tools["clangpp"])
+        tools["gpp"]["via"] = "clang++"
+
+    # dotnet: the SDK (not just the runtime) is required to BUILD; derive the
+    # highest installed NETCore.App TargetFramework for generated projects.
+    if tools.get("dotnet", {}).get("available"):
+        rc, out, err, _ = _call(["dotnet", "--list-runtimes"], timeout=60)
+        tfm = ""
+        if rc == 0:
+            for line in (out or "").splitlines():
+                if "Microsoft.NETCore.App" not in line:
+                    continue
+                m = re.search(r"(\d+)\.\d+", line)
+                if m:
+                    tfm = "net%s.0" % m.group(1)
+        tools["dotnet"]["tfm"] = tfm
+        rc2, out2, _, _ = _call(["dotnet", "--list-sdks"], timeout=60)
+        if not (rc2 == 0 and (out2 or "").strip()):
+            tools["dotnet"]["available"] = False
+            tools["dotnet"]["error"] = \
+                "runtime present but no SDK installed (cannot build)"
+            tools.setdefault("_errors", {})["dotnet"] = \
+                "no .NET SDK installed"
     return tools
 
 
-# --------------------------------------------------------------------------
-# Variant construction
-# --------------------------------------------------------------------------
-def _build_artifacts(wid, stem, work, tools, opts, warnings, timeout):
-    """Compile bytecode / native / rust artifacts. Returns a dict of paths."""
-    built = {}
-    # These artifacts are only consumed by host (Windows) variants.
-    if not opts.get("include_windows", True) or not tools["spid3r"]["available"]:
-        return built
-    for label, cmd, dest in [
-        ("bytecode", ["spid3r", "compile", stem + ".matrix",
-                      "-o", stem + ".matrixc"], stem + ".matrixc"),
-        ("native", ["spid3r", "build", stem + ".matrix", "-o",
-                    stem + "_native" + EXE, "--release"],
-         stem + "_native" + EXE),
-    ]:
-        if label == "native" and not opts.get("include_native", True):
+def _available_modules(tools, opts):
+    """Language modules runnable right now, in registry order."""
+    mods = []
+    if not bool(opts.get("include_windows", True)):
+        return mods
+    for m in LANG_MODULES:
+        if not m.available(tools):
             continue
-        rc, out, err, dt = _call(cmd, cwd=work, timeout=timeout)
-        if rc == 0 and os.path.isfile(os.path.join(work, dest)):
-            built[label] = os.path.join(work, dest)
-        else:
-            warnings.append("%s: %s build failed (%s)"
-                            % (wid, label, _first_line(err) or _first_line(out)
-                               or "rc=%s" % rc))
-    # Rust reference variant: built for EVERY workload that ships a .rs
-    # source, so native-vs-interpreted comparisons cover the whole suite.
-    if "rs" in SOURCES.get(wid, {}) and tools.get("rustc", {}).get("available"):
-        dest = stem + "_rs" + EXE
-        rc, out, err, _ = _call(
-            ["rustc", "-O", stem + ".rs", "-o", dest],
-            cwd=work, timeout=timeout)
-        if rc == 0 and os.path.isfile(os.path.join(work, dest)):
-            built["rust"] = os.path.join(work, dest)
-        else:
-            warnings.append("%s: rustc build failed (%s)"
-                            % (wid, _first_line(err) or "rc=%s" % rc))
-    return built
+        if m.GROUP == "reference" and not opts.get("include_references", True):
+            continue
+        mods.append(m)
+    return mods
 
 
-def _variants(wid, stem, work, tools, opts, built, warnings, timeout):
-    """Return list of dicts: key, label, group, source, cmd.
-
-    ``source`` records WHERE a number came from ("windows" or "docker").
-    Docker variants are never silently mixed with host baselines: the report
-    tags each row and names the container so the different environment is
-    visible to anyone reading the numbers.
-    """
-    v = []
-    pyexe = sys.executable
-    want_windows = bool(opts.get("include_windows", True))
-    want_docker = bool(opts.get("include_container", False))
-
-    def add(key, label, group, source, cmd):
-        v.append({"key": key, "label": label, "group": group,
-                  "source": source, "cmd": cmd})
-
-    # --- installed Windows / host toolchains -------------------------------
-    if want_windows:
-        if opts.get("include_references", True):
-            if tools.get("rustc", {}).get("available") and built.get("rust"):
-                add("rust", "Rust -O native", "reference", "windows",
-                    [built["rust"]])
-            if tools["node"]["available"]:
-                add("node", "Node %s" % tools["node"]["version"].lstrip("v").split(".")[0],
-                    "reference", "windows", ["node", stem + ".js"])
-        if tools["php"]["available"]:
-            add("php", "PHP %s" % ".".join(tools["php"]["version"].split(".")[:2]),
-                "baseline", "windows", ["php", stem + ".php"])
-        if tools["python"]["available"]:
-            add("python", "Python %s" % ".".join(
-                tools["python"]["version"].split(".")[:2]),
-                "baseline", "windows", [pyexe, stem + ".py"])
-
-        # --- Spid3r installed on the host ---------------------------------
-        if tools["spid3r"]["available"]:
-            ver = tools["spid3r"]["version"].replace("spid3r ", "").split(" ")[0]
-            add("spid3r_tw", "Spid3r %s tree-walk" % ver, "spid3r",
-                "windows", ["spid3r", "run", stem + ".matrix"])
-            add("spid3r_vm", "Spid3r %s VM" % ver, "spid3r",
-                "windows", ["spid3r", "run", "--engine", "vm", stem + ".matrix"])
-            add("spid3r_vm_noopt", "Spid3r %s VM --no-opt" % ver, "spid3r",
-                "windows", ["spid3r", "run", "--engine", "vm", "--no-opt",
-                            stem + ".matrix"])
-            if built.get("bytecode"):
-                add("spid3r_bytecode", "Spid3r %s bytecode exec" % ver, "spid3r",
-                    "windows", ["spid3r", "exec", stem + ".matrixc"])
-            if built.get("native"):
-                add("spid3r_native", "Spid3r %s native --release" % ver,
-                    "spid3r", "windows", [built["native"]])
-
-    # --- deployed Spid3r inside the Docker container -----------------------
-    # Docker is ADDITIVE, not a replacement: host baselines are the measuring
-    # stick and must stay so slowdown ratios remain meaningful and honest.
-    c = tools.get("container") or {}
-    if want_docker and c.get("spid3r"):
-        name = c["name"]
-        remote = "/tmp/hlc_rt_%s.matrix" % stem
-        rc, out, err, _ = _call(
-            ["docker", "cp", os.path.join(work, stem + ".matrix"),
-             "%s:%s" % (name, remote)], timeout=90)
-        if rc != 0:
-            warnings.append("%s: docker cp into %s failed (%s)"
-                            % (wid, name, _first_line(err) or "rc=%s" % rc))
-        else:
-            cver = c["version"].replace("spid3r ", "").split(" ")[0]
-            tag = "Docker: %s" % name
-            add("spid3r_docker_tw",
-                "Spid3r %s tree-walk (%s)" % (cver, tag), "spid3r",
-                "docker", ["docker", "exec", name, "spid3r", "run", remote])
-            add("spid3r_docker_vm",
-                "Spid3r %s VM (%s)" % (cver, tag), "spid3r",
-                "docker", ["docker", "exec", name, "spid3r", "run",
-                           "--engine", "vm", remote])
-    elif want_docker and c.get("name"):
-        warnings.append("container %s has no spid3r binary; in-Docker "
-                        "variants skipped" % c["name"])
-    elif want_docker:
-        warnings.append("Docker mode selected but no container with a Spid3r "
-                        "binary resolved; in-Docker variants skipped")
-    return v
+def _build_for_module(wid, stem, mod, work, tools, opts, warnings,
+                      build_timeout):
+    """Compile artifacts for one language module (if it needs building)."""
+    if not hasattr(mod, "build"):
+        return None
+    return mod.build(work, stem, tools, build_timeout, _call, warnings, EXE)
 
 
-def _cleanup_container(tools):
-    c = tools.get("container") or {}
-    if c.get("spid3r"):
-        _call(["docker", "exec", c["name"], "sh", "-c",
-               "rm -f /tmp/hlc_rt_*.matrix /tmp/hlc_rt_*.matrixc"],
-              timeout=30)
+def _variants_for_module(wid, stem, mod, work, tools, built, opts, warnings):
+    """Variant rows contributed by one language module for one workload."""
+    if stem not in mod.SOURCES:
+        return []
+    kwargs = {}
+    if mod.KEY == "python":
+        kwargs["python_exe"] = sys.executable
+    return mod.variants(stem, work, tools, built, **kwargs)
+
+
+# --------------------------------------------------------------------------
+# Variant construction is registry-driven: every language module carries its
+# own sources, build step and run commands (see comparison_sources/).
+# --------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------
 # Main entry point
 # --------------------------------------------------------------------------
-def run(cfg, out_dir, log=None, container=""):
+def run(cfg, out_dir, log=None, container="", write_html=True):
     """Execute the comparison and write artifacts into ``out_dir``.
+
+    ``container`` is accepted for call-site compatibility and ignored: the
+    container instrumentation was removed in v2.
 
     Returns the full data dict. Never raises: all problems become warnings
     plus a non-ok status, so the HTTP load test result is never lost.
@@ -1092,10 +529,9 @@ def run(cfg, out_dir, log=None, container=""):
     raw_opts = dict(DEFAULT_OPTIONS)
     raw_opts.update(cfg.get("runtime_comparison") or {})
     opts = dict(raw_opts)
-    if container:
-        opts["container"] = container
     repeats = max(1, min(20, int(opts.get("repeats") or 5)))
     timeout = max(60, int(opts.get("timeout_s") or 300))
+    build_timeout = max(60, int(opts.get("build_timeout_s") or 900))
     wanted = [w for w in (opts.get("workloads") or []) if w in WORKLOAD_INFO]
     if not wanted:
         wanted = list(WORKLOAD_INFO)
@@ -1104,7 +540,7 @@ def run(cfg, out_dir, log=None, container=""):
         runtime_env = "windows"
     env_label = RUNTIME_ENVIRONMENT_LABELS[runtime_env]
     want_windows = bool(opts.get("include_windows", True))
-    want_docker = bool(opts.get("include_container", False))
+    write_sources = bool(opts.get("write_sources", True))
 
     os.makedirs(out_dir, exist_ok=True)
     warnings = []
@@ -1122,7 +558,6 @@ def run(cfg, out_dir, log=None, container=""):
             "runtime_environment": runtime_env,
             "runtime_environment_label": env_label,
             "include_windows": want_windows,
-            "include_container": want_docker,
         },
         "environment": {},
         "workloads": {},
@@ -1135,127 +570,146 @@ def run(cfg, out_dir, log=None, container=""):
 
     work = tempfile.mkdtemp(prefix="hlc-rt-")
     sources_dir = os.path.join(out_dir, "sources")
-    if opts.get("write_sources", True):
+    if write_sources:
         # A stable output dir (runtime-comparison/) is reused between runs;
         # clear stale programs so `sources/` always matches this run.
         shutil.rmtree(sources_dir, ignore_errors=True)
         os.makedirs(sources_dir, exist_ok=True)
     try:
-        _log(log, "detecting language toolchains")
+        _log(log, "detecting language toolchains (%d known)" % len(_PROBES))
         tools = detect_tools(cfg, opts)
+        mods = _available_modules(tools, opts)
+        detected = [m.KEY for m in mods]
+        _log(log, "available language modules: %s"
+             % (", ".join(detected) or "none"))
         data["environment"] = {
             "runtime_environment": env_label,
-            "comparison_sources": ("Windows + Docker" if want_windows and want_docker
-                                   else "Windows only" if want_windows
-                                   else "Docker only"),
-            "spid3r_host": tools["spid3r"]["version"] or "not available",
-            "spid3r_container": (tools["container"]["version"]
-                                 or "not available"),
-            "spid3r_container_name": tools["container"]["name"] or "",
-            "php": tools["php"]["version"] or "not available",
-            "python": tools["python"]["version"] or "not available",
-            "node": tools["node"]["version"] or "not available",
-            "rustc": tools.get("rustc", {}).get("version") or "not available",
+            "comparison_sources": "installed host toolchains",
+            "detected_modules": detected,
             "platform": sys.platform,
             "os": "%s (%s)" % (platform.system(), platform.release()),
             "os_build": platform.platform(),
-            "cpu_model": (util.cpu_model() or platform.machine()
+            "cpu_model": (cpu_model() or platform.machine()
                           or "not recorded"),
             "cpu_count": os.cpu_count() or "not recorded",
             "python_runner": sys.version.split()[0],
-            # Provenance: WHICH binary each label refers to. Multiple Node /
-            # PHP installs can coexist on PATH and resolve differently between
-            # shells, so the executable path is published alongside the
-            # version to keep runs comparable and auditable.
-            "spid3r_executable": tools["spid3r"].get("path", ""),
-            "php_executable": tools["php"].get("path", ""),
-            "python_executable": tools["python"].get("path", ""),
-            "node_executable": tools["node"].get("path", ""),
-            "rustc_executable": tools.get("rustc", {}).get("path", ""),
+            "proc_metrics": "measured per variant (proc_metrics_method field)",
         }
-        if not want_windows and not want_docker:
-            warnings.append("Neither installed Windows runtimes nor Docker "
-                            "variants are enabled; comparison cannot be produced.")
+        # One version line per detected toolchain, plus the resolved binary
+        # path (multiple installs can coexist on PATH; publish provenance).
+        for key, tinfo in tools.items():
+            if key.startswith("_"):
+                continue
+            if tinfo.get("available"):
+                data["environment"][key] = tinfo.get("version") or "available"
+                data["environment"][key + "_executable"] = tinfo.get("path", "")
+            else:
+                data["environment"][key] = "not available"
+        if not mods:
+            warnings.append("No supported language toolchain detected on this "
+                            "host; comparison cannot be produced.")
             data["status"] = "unavailable"
             data["summary"] = summarize_data(data)
-            _finish(data, out_dir, opts, log)
-            return data
-        if want_windows and not (tools["php"]["available"]
-                                 or tools["python"]["available"]):
-            warnings.append("Baseline unavailable: neither PHP nor Python is "
-                            "installed on the host, so slowdown ratios cannot "
-                            "be computed (measured times are still reported).")
-        if not (tools["spid3r"]["available"]
-                or (tools.get("container") or {}).get("spid3r")):
-            warnings.append("No Spid3r binary found on host or in the container "
-                            "(%s) - comparison cannot be produced." % env_label)
-            data["status"] = "unavailable"
-            data["summary"] = summarize_data(data)
-            _finish(data, out_dir, opts, log)
+            _finish(data, out_dir, opts, log, write_html=write_html)
             return data
 
         for wid in wanted:
             info = WORKLOAD_INFO[wid]
             _log(log, "workload %s (%s): generating sources" % (wid, info["id"]))
             stem = wid
-            for ext, text in SOURCES[wid].items():
-                name = "%s.%s" % (stem, ext)
-                with open(os.path.join(work, name), "w",
-                          encoding="utf-8", newline="\n") as f:
-                    f.write(text)
-                if opts.get("write_sources", True):
-                    with open(os.path.join(sources_dir, name), "w",
-                              encoding="utf-8", newline="\n") as f:
-                        f.write(text)
+            for mod in mods:
+                src = mod.SOURCES.get(stem)
+                if src is None:
+                    continue
+                rel = _safe_rel(mod.filename(stem))
+                (pathlib.Path(work) / rel).write_text(
+                    src, encoding="utf-8", newline="\n")
+                if write_sources:
+                    (pathlib.Path(sources_dir) / rel).write_text(
+                        src, encoding="utf-8", newline="\n")
+                # Extra generated files (e.g. the C# project file) go through
+                # the same source writer so sources/ stays the full truth.
+                if hasattr(mod, "extra_files"):
+                    for extra_rel, extra_text in \
+                            mod.extra_files(stem, tools).items():
+                        erel = _safe_rel(extra_rel)
+                        (pathlib.Path(work) / erel).write_text(
+                            extra_text, encoding="utf-8", newline="\n")
+                        if write_sources:
+                            (pathlib.Path(sources_dir) / erel).write_text(
+                                extra_text, encoding="utf-8", newline="\n")
 
-            built = _build_artifacts(wid, stem, work, tools, opts,
-                                     warnings, timeout)
-            variants = _variants(wid, stem, work, tools, opts, built,
-                                 warnings, timeout)
             rows = []
-            for var in variants:
-                comps, walls, results = [], [], []
-                failed = ""
-                for _ in range(repeats):
-                    rc, out, err, wall = _call(var["cmd"], cwd=work,
-                                               timeout=timeout)
-                    if rc != 0:
-                        failed = _first_line(err) or "rc=%s" % rc
-                        break
-                    res, cms = _parse_output(out)
-                    if res is None:
-                        failed = "missing RESULT/TIME_US output"
-                        break
-                    results.append(res)
-                    comps.append(cms)
-                    walls.append(wall)
-                if failed or not comps:
-                    warnings.append("%s / %s skipped: %s"
-                                    % (wid, var["label"],
-                                       failed or "no measurements"))
+            for mod in mods:
+                if stem not in mod.SOURCES:
                     continue
-                # Integrity guard: identical work in every language.
-                observed = set(results)
-                if len(observed) != 1 or next(iter(observed)) != info["expected"]:
-                    warnings.append(
-                        "%s / %s REJECTED: checksum %r != expected %r"
-                        % (wid, var["label"], sorted(observed),
-                           info["expected"]))
-                    continue
-                rows.append({
-                    "key": var["key"], "runtime": var["label"],
-                    "group": var["group"],
-                    "source": var.get("source", "windows"),
-                    "result": results[0],
-                    "compute_ms": round(statistics.median(comps), 3),
-                    "compute_min_ms": round(min(comps), 3),
-                    "compute_max_ms": round(max(comps), 3),
-                    "wall_ms": round(statistics.median(walls), 2),
-                    "compute_runs_ms": [round(x, 3) for x in comps],
-                    "stats": row_stats(comps, var["group"]),
-                })
+                built = _build_for_module(wid, stem, mod, work, tools, opts,
+                                          warnings, build_timeout)
+                variants = _variants_for_module(wid, stem, mod, work, tools,
+                                                built, opts, warnings)
+                for var in variants:
+                    comps, walls, results = [], [], []
+                    rss, cpu_user, cpu_kernel = [], [], []
+                    failed = ""
+                    method = ""
+                    for _ in range(repeats):
+                        m = _measure(var["cmd"], cwd=work, timeout=timeout)
+                        if m["rc"] != 0:
+                            failed = _first_line(m["stderr"]) or "rc=%s" % m["rc"]
+                            break
+                        res, cms = _parse_output(m["stdout"])
+                        if res is None:
+                            failed = "missing RESULT/TIME_US output"
+                            break
+                        results.append(res)
+                        comps.append(cms)
+                        walls.append(m["wall_ms"])
+                        if m.get("peak_rss_bytes") is not None:
+                            rss.append(m["peak_rss_bytes"])
+                        if m.get("cpu_user_s") is not None:
+                            cpu_user.append(m["cpu_user_s"])
+                        if m.get("cpu_kernel_s") is not None:
+                            cpu_kernel.append(m["cpu_kernel_s"])
+                        method = m.get("method", "")
+                    if failed or not comps:
+                        warnings.append("%s / %s skipped: %s"
+                                        % (wid, var["label"],
+                                           failed or "no measurements"))
+                        continue
+                    # Integrity guard: identical work in every language.
+                    observed = set(results)
+                    if len(observed) != 1 or \
+                            next(iter(observed)) != info["expected"]:
+                        warnings.append(
+                            "%s / %s REJECTED: checksum %r != expected %r"
+                            % (wid, var["label"], sorted(observed),
+                               info["expected"]))
+                        continue
+                    rows.append({
+                        "key": var["key"], "runtime": var["label"],
+                        "group": var["group"],
+                        "source": "host",
+                        "result": results[0],
+                        "compute_ms": round(statistics.median(comps), 3),
+                        "compute_min_ms": round(min(comps), 3),
+                        "compute_max_ms": round(max(comps), 3),
+                        "wall_ms": round(statistics.median(walls), 2),
+                        "compute_runs_ms": [round(x, 3) for x in comps],
+                        "stats": row_stats(comps, var["group"]),
+                        # Measured resources (None = unavailable, never
+                        # estimated; provenance in procmetrics).
+                        "peak_rss_bytes": (round(statistics.median(rss))
+                                           if rss else None),
+                        "peak_rss_min_bytes": round(min(rss)) if rss else None,
+                        "peak_rss_max_bytes": round(max(rss)) if rss else None,
+                        "cpu_user_s": (round(statistics.median(cpu_user), 4)
+                                       if cpu_user else None),
+                        "cpu_kernel_s": (round(statistics.median(cpu_kernel), 4)
+                                         if cpu_kernel else None),
+                        "proc_metrics_method": method,
+                    })
             verified = len(rows) >= 2 and all(
-                r["result"] == info["expected"] for r in rows)
+                w["result"] == info["expected"] for w in rows)
             if not verified and rows:
                 warnings.append("%s: only %d verified variants; ratios for "
                                 "this workload are omitted" % (wid, len(rows)))
@@ -1277,82 +731,141 @@ def run(cfg, out_dir, log=None, container=""):
             and data["workloads"] else
             "partial" if any(w["verified"] for w in
                              data["workloads"].values()) else "unavailable")
-        _finish(data, out_dir, opts, log)
+        _finish(data, out_dir, opts, log, write_html=write_html)
         return data
     except Exception as ex:
         warnings.append("unexpected error: %s: %s" % (type(ex).__name__, ex))
         data["status"] = "error"
         data["summary"] = {"verdict": "Comparison failed: %s" % ex}
-        _finish(data, out_dir, opts, log)
+        _finish(data, out_dir, opts, log, write_html=write_html)
         return data
     finally:
-        _cleanup_container(tools) if "tools" in locals() else None
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _finish(data, out_dir, opts, log):
+def _finish(data, out_dir, opts, log, write_html=True):
     json_path = os.path.join(out_dir, "runtime_comparison.json")
     html_path = os.path.join(out_dir, "runtime_comparison.html")
     sources_dir = os.path.join(out_dir, "sources")
     data["artifacts"] = {
         "json": "runtime_comparison.json",
-        "html": "runtime_comparison.html",
+        # Full benchmark runs embed this content in report.html and skip the
+        # standalone page; only the JSON data artifact is kept there.
+        "html": "runtime_comparison.html" if write_html else "",
         "sources": ("sources/" if (opts.get("write_sources", True)
                                    and os.path.isdir(sources_dir)) else ""),
     }
     atomic_json(json_path, data)
-    build_html(data, html_path)
+    if write_html:
+        build_html(data, html_path)
+        _log(log, "wrote %s" % html_path)
+    else:
+        _log(log, "comparison embedded in the run report (no standalone "
+                  "page written)")
     s = data.get("summary") or {}
     _log(log, "status=%s | %s" % (data["status"],
                                   s.get("verdict", "no verdict")),
          "warn" if data["status"] not in ("ok",) else "info")
-    _log(log, "wrote %s" % html_path)
     return data
 
 
 def summarize_data(data):
-    """Compute slowdown ratios. Pure function - also used by selftest."""
+    """Compute slowdown ratios. Pure function - also used by selftest.
+
+    Ratios are computed against every measured baseline (python, php, node,
+    ruby, typescript, ...) plus ``vs_fastest``; a full pairwise geomean ratio
+    matrix covers every measured language pair. Only verified workloads
+    participate, so a wrong checksum can never enter a ratio.
+    """
     by_wid = {}
     for wid, w in (data.get("workloads") or {}).items():
         if not w.get("verified"):
             continue
         by_wid[wid] = {r["key"]: r["compute_ms"] for r in w["rows"]}
 
+    labels = {r["key"]: r["runtime"]
+              for w in (data.get("workloads") or {}).values()
+              for r in w["rows"]}
+    groups = {r["key"]: r.get("group", "")
+              for w in (data.get("workloads") or {}).values()
+              for r in w["rows"]}
+
+    def ratios_for(subject, base):
+        out = {}
+        for wid, vals in by_wid.items():
+            if subject in vals and base in vals and vals[base] > 0:
+                out[wid] = round(vals[subject] / vals[base], 3)
+        g = geo(list(out.values()))
+        return {"workloads": out,
+                "geomean": round(g, 3) if g else None}
+
+    # Spid3r rows keep the classic vs_php / vs_python view and gain
+    # vs_fastest; every other language pair goes into the matrix.
     slowdown = {}
     spid3r_keys = sorted({r["key"] for w in (data.get("workloads") or {}).values()
                           for r in w["rows"]
                           if r["group"] == "spid3r"})
-    labels = {r["key"]: r["runtime"]
-              for w in (data.get("workloads") or {}).values()
-              for r in w["rows"]}
     for key in spid3r_keys:
         entry = {"label": labels.get(key, key), "vs_php": {},
                  "vs_python": {}}
         for base in ("php", "python"):
-            ratios = {}
-            for wid, vals in by_wid.items():
-                if key in vals and base in vals and vals[base] > 0:
-                    ratios[wid] = round(vals[key] / vals[base], 3)
-            g = geo(list(ratios.values()))
-            entry["vs_" + base] = {"workloads": ratios,
-                                   "geomean": round(g, 3) if g else None}
+            entry["vs_" + base] = ratios_for(key, base)
         slowdown[key] = entry
+
+    # Pairwise geomean ratio matrix over ALL measured keys (subject / base).
+    matrix = {}
+    all_keys = sorted({k for vals in by_wid.values() for k in vals})
+    for subject in all_keys:
+        entry = {}
+        for base in all_keys:
+            if subject == base:
+                continue
+            entry[base] = ratios_for(subject, base)["geomean"]
+        matrix[subject] = {"label": labels.get(subject, subject),
+                           "geomeans": entry}
+    # vs_fastest per key: geomean ratio against the fastest measured key
+    # per workload (the honest "how far from the best tool" number).
+    fastest = {}
+    for wid, vals in by_wid.items():
+        if vals:
+            k = min(vals, key=lambda x: vals[x])
+            fastest[wid] = k
+    for subject, entry in matrix.items():
+        ratios = {}
+        for wid, vals in by_wid.items():
+            if subject in vals and wid in fastest and vals.get(fastest[wid]):
+                ratios[wid] = round(vals[subject] / vals[fastest[wid]], 3)
+        g = geo(list(ratios.values()))
+        entry["vs_fastest"] = {"workloads": ratios,
+                               "geomean": round(g, 3) if g else None}
+
+    # Spid3r entries gain vs_fastest too.
+    for key, entry in slowdown.items():
+        ratios = {}
+        for wid, vals in by_wid.items():
+            if key in vals and wid in fastest and vals.get(fastest[wid]):
+                ratios[wid] = round(vals[key] / vals[fastest[wid]], 3)
+        g = geo(list(ratios.values()))
+        entry["vs_fastest"] = {"workloads": ratios,
+                               "geomean": round(g, 3) if g else None}
 
     all_ratios = []
     for e in slowdown.values():
-        for b in ("vs_php", "vs_python"):
-            all_ratios.extend(e[b]["workloads"].values())
+        for b in ("vs_php", "vs_python", "vs_fastest"):
+            all_ratios.extend((e.get(b) or {}).get("workloads", {}).values())
     best = min(all_ratios) if all_ratios else None
     worst = max(all_ratios) if all_ratios else None
     if not by_wid:
         verdict = "No verified workloads - comparison unavailable."
+    elif not slowdown:
+        # Baselines exist but no Spid3r variant was measured, so there are no
+        # Spid3r ratios. Never claim Spid3r "matched or beat" anything.
+        verdict = ("No Spid3r variant could be measured - Spid3r slowdown "
+                   "ratios unavailable; per-language matrix still valid.")
     elif best is None:
-        # Guard: baselines exist but no Spid3r variant was measured, so there
-        # are no ratios. Never claim Spid3r "matched or beat" anything.
-        verdict = ("No PHP/Python baseline or Spid3r variant could be measured "
-                   "- slowdown ratios unavailable.")
+        verdict = "Slowdown ratios unavailable."
     elif best > 1:
-        verdict = ("Spid3r is slower than PHP and Python on every measured "
+        verdict = ("Spid3r is slower than the measured baselines on every "
                    "workload (%.2fx-%.2fx)." % (best, worst))
     else:
         verdict = "Spid3r matched or beat a baseline in at least one workload."
@@ -1386,6 +899,7 @@ def summarize_data(data):
         "slowdown_range": {"min": round(best, 3) if best else None,
                            "max": round(worst, 3) if worst else None},
         "slowdown": slowdown,
+        "matrix": matrix,
         "verdict": verdict,
         "note": "Language-runtime compute only; not an end-to-end HTTP "
                 "framework comparison.",
@@ -1480,20 +994,32 @@ def _f(v, d=2):
 
 
 def row_source(row, *, provenance_recorded=True):
-    """WHERE a comparison row was measured: 'windows', 'docker' or 'unavailable'."""
+    """WHERE a comparison row was measured: 'host', 'docker' or 'unavailable'.
+
+    v2.x runs measure everything on the host; archived docker-era rows keep
+    their 'docker' label so a v1 archive still renders honestly.
+    """
     src = row.get("source")
-    if src in ("windows", "docker"):
-        return src  # v2 authoritative
+    if src == "docker":
+        return "docker"                       # archived instrumented run
+    if src in ("host", "windows"):
+        return "host"
     if (str(row.get("key") or "").startswith("spid3r_docker_")
             or "(Docker)" in str(row.get("runtime") or "")):
         return "docker"  # unambiguous evidence even in a v1 archive
     if provenance_recorded:
-        return "windows"
+        return "host"
     return "unavailable"  # never invent a source for an unrecorded v1 row
 
 
-def build_html(data, out_path):
-    """Render a single-file, dependency-free HTML report."""
+def build_body(data, include_page_header=False):
+    """Return the comparison report BODY as an HTML fragment.
+
+    Contains every section (status card, per-workload evidence, ratios,
+    pairwise matrix, quality, environment & method) but no page shell. Used
+    by ``build_html`` for the standalone page and embedded verbatim by
+    ``report.build`` so the run has ONE self-contained report.
+    """
     s = data.get("summary") or {}
     env = data.get("environment") or {}
 
@@ -1508,22 +1034,20 @@ def build_html(data, out_path):
                    if row_source(r, provenance_recorded=provenance_recorded)
                    == "docker"]
 
-    P = ["<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">",
-         '<meta name="viewport" content="width=device-width,initial-scale=1">',
-         "<title>Runtime Comparison - %s</title>" % _e(data.get("generated_utc")),
-         "<style>%s</style></head><body><div class=\"wrap\">" % _CSS]
-
+    P = []
     status = data.get("status", "unknown")
     bcls = {"ok": "ok", "partial": "warn", "unavailable": "bad",
             "error": "bad"}.get(status, "warn")
-    P.append('<header class="top"><h1>Language Runtime Comparison</h1>')
-    P.append('<p class="sub">Spid3r vs PHP / Python / Node / Rust &middot; '
-             'generated %s &middot; checksum-verified, no simulated values</p>'
-             % _e(data.get("generated_utc")))
+    if include_page_header:
+        P.append('<header class="top"><h1>Language Runtime Comparison</h1>')
+        P.append('<p class="sub">Spid3r vs %s &middot; '
+                 'generated %s &middot; checksum-verified, no simulated values'
+                 '</p>' % (_e(_LANG_LINE), _e(data.get("generated_utc"))))
     env_label = ((data.get("environment") or {}).get("runtime_environment")
                  or (data.get("config_meta") or {}).get("runtime_environment_label")
-                 or ("Windows - installed runtimes" if provenance_recorded
+                 or ("Host - installed runtimes" if provenance_recorded
                      else "provenance not recorded (schema v1)"))
+    P.append('<div class="rc-status">')
     P.append('<span class="badge %s">status: %s</span>' % (bcls, _e(status)))
     P.append('<span class="badge">runtime: %s</span>' % _e(env_label))
     P.append('<span class="badge">%s workloads</span>'
@@ -1541,7 +1065,7 @@ def build_html(data, out_path):
         else:
             P.append('<span class="badge ok">quality: %d/%d stable</span>'
                      % (stable, stable + flagged))
-    P.append("</header>")
+    P.append("</div>")
 
     rng = s.get("slowdown_range") or {}
     P.append('<div class="kpis">')
@@ -1605,8 +1129,8 @@ def build_html(data, out_path):
                 cls = {"spid3r": " class=\"spid3r\"",
                        "baseline": " class=\"base\""}.get(r.get("group"), "")
                 src = row_source(r, provenance_recorded=provenance_recorded)
-                where = ("Docker container" if src == "docker"
-                         else "Windows host" if src == "windows"
+                where = ("Docker container (archived run)" if src == "docker"
+                         else "Host machine" if src == "host"
                          else "unavailable (provenance not recorded)")
                 st = r.get("stats") or {}
                 mc = st.get("mean_ci95")
@@ -1653,15 +1177,18 @@ def build_html(data, out_path):
         P.append('<section class="card"><h2>Slowdown ratios</h2>')
         P.append('<p class="note">Spid3r time divided by baseline time. '
                  'Values above 1.00&times; mean Spid3r is slower. '
-                 'Geomean covers all verified workloads.</p>')
+                 'Geomean covers all verified workloads. <code>vs fastest'
+                 '</code> compares against the fastest measured runtime for '
+                 'each workload.</p>')
         wids = sorted({k for e in sd.values()
-                       for k in (e.get("vs_php", {}).get("workloads") or {})})
+                       for b in ("vs_php", "vs_python", "vs_fastest")
+                       for k in ((e.get(b) or {}).get("workloads") or {})})
         P.append("<table><thead><tr><th rowspan=\"2\">Spid3r variant</th>")
-        for b in ("PHP", "Python"):
+        for b in ("PHP", "Python", "Fastest"):
             P.append('<th class="num" colspan="%d">vs %s</th>'
                      % (len(wids) + 1, b))
         P.append("</tr><tr>")
-        for _ in range(2):
+        for _ in range(3):
             for wid in wids:
                 P.append('<th class="num">%s</th>' % _e(WORKLOAD_INFO.get(
                     wid, {}).get("id", wid)))
@@ -1669,7 +1196,7 @@ def build_html(data, out_path):
         P.append("</tr></thead><tbody>")
         for key, entry in sd.items():
             P.append('<tr class="spid3r"><td>%s</td>' % _e(entry.get("label")))
-            for b in ("vs_php", "vs_python"):
+            for b in ("vs_php", "vs_python", "vs_fastest"):
                 vals = (entry.get(b) or {}).get("workloads") or {}
                 for wid in wids:
                     v = vals.get(wid)
@@ -1678,6 +1205,32 @@ def build_html(data, out_path):
                 g = (entry.get(b) or {}).get("geomean")
                 P.append('<td class="num"><strong>%s</strong></td>'
                          % ("%.2f&times;" % g if g else "n/a"))
+            P.append("</tr>")
+        P.append("</tbody></table></section>")
+
+    mx = s.get("matrix") or {}
+    if mx:
+        P.append('<section class="card"><h2>Pairwise ratio matrix</h2>')
+        P.append('<p class="note">Geomean slowdown of the row runtime vs the '
+                 'column runtime across all verified workloads. 1.00&times; '
+                 'means equal; values are computed ONLY from checksum-verified '
+                 'workloads, so a wrong-checksum variant can never enter a '
+                 'ratio.</p>')
+        keys = sorted(mx.keys())
+        P.append('<table><thead><tr><th>Runtime</th>')
+        for k in keys:
+            P.append('<th class="num">%s</th>'
+                     % _e(mx[k].get("label", k)))
+        P.append("</tr></thead><tbody>")
+        for sk in keys:
+            P.append("<tr><td>%s</td>" % _e(mx[sk].get("label", sk)))
+            for k in keys:
+                if k == sk:
+                    P.append('<td class="num">&mdash;</td>')
+                else:
+                    v = (mx[sk].get("geomeans") or {}).get(k)
+                    P.append('<td class="num">%s</td>'
+                             % ("%.2f&times;" % v if v else "n/a"))
             P.append("</tr>")
         P.append("</tbody></table></section>")
 
@@ -1720,17 +1273,18 @@ def build_html(data, out_path):
                  % (_e(k), _e(v)))
     P.append("</tbody></table>")
     if docker_rows:
-        P.append('<p class="note"><strong>Docker rows run in a different '
-                 'environment</strong> than the host baselines (container CPU / '
+        P.append('<p class="note"><strong>Docker rows belong to an archived, '
+                 'differently-instrumented run</strong> (container CPU / '
                  'filesystem / image). The container name is printed in each '
-                 'Docker variant label. Ratios against host PHP / Python are '
-                 'therefore approximate and are never presented as an '
-                 'apples-to-apples deployment benchmark.</p>')
-    elif (provenance_recorded
-          and not (data.get("config_meta") or {}).get("include_container")):
-        P.append('<p class="note">Windows runtime mode: only toolchains '
-                 'installed on this host were measured. No Docker container '
-                 'was contacted and no container variant is present.</p>')
+                 'Docker variant label. Ratios against host rows are therefore '
+                 'approximate and are never presented as an apples-to-apples '
+                 'deployment benchmark.</p>')
+    elif provenance_recorded:
+        P.append('<p class="note">Host runtime mode: only toolchains installed '
+                 'on this machine were measured, each through its own resolved '
+                 'binary (paths published below). Every variant also carries '
+                 'the OS-measured peak working set and CPU time when the '
+                 'platform provides them.</p>')
     else:
         P.append('<p class="note">Provenance not recorded for this archived run '
                  '(schema v1); the measured sources cannot be determined.</p>')
@@ -1742,11 +1296,15 @@ def build_html(data, out_path):
              "<li>In-process timing (startup excluded); median of %s repeats "
              "is the reported value; min, max, raw repeat values, dispersion "
              "and confidence intervals are published, never hidden.</li>"
+             "<li>Peak working set and CPU time of every variant are MEASURED "
+             "by the operating system (Windows: GetProcessMemoryInfo / "
+             "GetProcessTimes; POSIX: wait4 rusage) or reported as "
+             "unavailable - never estimated.</li>"
              "<li>Spid3r uses <code>now_ms()</code> (1 ms resolution); workloads "
              "are sized to stay clear of the timer floor, and any variant that "
              "still lands near it is flagged in the quality table.</li>"
              "<li>Missing toolchains are skipped with a warning, never faked; "
-             "Docker rows are labelled as a different environment.</li>"
+             "archived Docker rows are labelled as a different environment.</li>"
              "</ul>" % _e(repeats))
     P.append("<h3>Standards alignment</h3><ul>"
              "<li><strong>Units:</strong> durations in milliseconds per "
@@ -1779,15 +1337,33 @@ def build_html(data, out_path):
             P.append("<li>%s</li>" % _e(w))
         P.append("</ul></section>")
 
+    return "".join(P)
+
+
+def build_html(data, out_path, extra_sections=""):
+    """Render the standalone single-file page.
+
+    ``extra_sections`` (an HTML fragment, e.g. the suitability body) is
+    appended before the footer so even the standalone comparison produces
+    ONE self-contained page. The full benchmark run embeds ``build_body``
+    into report.html instead and skips this file entirely.
+    """
+    P = ["<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">",
+         '<meta name="viewport" content="width=device-width,initial-scale=1">',
+         "<title>Runtime Comparison - %s</title>" % _e(data.get("generated_utc")),
+         "<style>%s</style></head><body><div class=\"wrap\">" % _CSS,
+         build_body(data, include_page_header=True)]
+    if extra_sections:
+        P.append(extra_sections)
     P.append("<footer>Heavy-Load Checker runtime comparison &middot; "
              "schema v%s &middot; single-file report, no JavaScript, no "
              "external resources.</footer>" % _e(SCHEMA_VERSION))
     P.append("</div></body></html>")
 
-    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write("".join(P))
-    return out_path
+    dest = pathlib.Path(os.path.normpath(out_path))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("".join(P), encoding="utf-8", newline="\n")
+    return str(dest)
 
 
 def console_summary(data, stream=None):
@@ -1808,12 +1384,14 @@ def console_summary(data, stream=None):
                   file=out)
     print("\nSlowdown vs baselines (geomean):", file=out)
     for key, e in (s.get("slowdown") or {}).items():
-        print("  %-38s PHP %6s  Python %6s"
+        vf = ((e.get("vs_fastest") or {}).get("geomean"))
+        print("  %-38s PHP %6s  Python %6s  fastest %6s"
               % (e.get("label"),
                  ("%.2fx" % e["vs_php"]["geomean"]
-                  if e["vs_php"]["geomean"] else "n/a"),
+                  if (e.get("vs_php") or {}).get("geomean") else "n/a"),
                  ("%.2fx" % e["vs_python"]["geomean"]
-                  if e["vs_python"]["geomean"] else "n/a")), file=out)
+                  if (e.get("vs_python") or {}).get("geomean") else "n/a"),
+                 ("%.2fx" % vf if vf else "n/a")), file=out)
     for w in (data.get("warnings") or [])[:8]:
         print("  WARN: %s" % w, file=out)
     print("\nArtifacts: runtime_comparison.json / runtime_comparison.html",

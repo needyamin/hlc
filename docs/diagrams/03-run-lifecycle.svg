@@ -17,9 +17,9 @@
 <line x1="36" y1="84" x2="1164" y2="84" stroke="#d8e1ec" stroke-width="1.5"/>
 <rect x="60.0" y="112" width="126" height="104" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
 <text x="123.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="middle">1  Preflight</text>
-<text x="123.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">6 read-only checks:</text>
-<text x="123.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">URL, health, Docker,</text>
-<text x="123.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">container, cgroup, RAM</text>
+<text x="123.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">4 read-only checks:</text>
+<text x="123.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">URL, health,</text>
+<text x="123.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">vantage, host RAM</text>
 <rect x="199.5" y="112" width="126" height="104" rx="10" fill="#e8f0ff" stroke="#2563eb" stroke-width="1.6"/>
 <text x="262.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#12336b" text-anchor="middle">2  Set up run</text>
 <text x="262.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runs/run-&lt;stamp&gt;/</text>
@@ -28,9 +28,9 @@
 <polyline points="186.0,164.0 199.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
 <rect x="339.0" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="402.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">3  Instrument</text>
-<text x="402.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">start sampler threads</text>
-<text x="402.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ in-container</text>
-<text x="402.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">collector process</text>
+<text x="402.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">start sampler threads:</text>
+<text x="402.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">health probe @ 1 Hz</text>
+<text x="402.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ generator self-monitor</text>
 <polyline points="325.5,164.0 339.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
 <rect x="478.5" y="112" width="126" height="104" rx="10" fill="#e3f6f2" stroke="#0f8a7a" stroke-width="1.6"/>
 <text x="541.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">4  Drive load</text>
@@ -42,7 +42,7 @@
 <text x="681.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="middle">5  Aggregate</text>
 <text x="681.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">stop workers,</text>
 <text x="681.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">latency percentiles,</text>
-<text x="681.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">resource series</text>
+<text x="681.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">quality + scalability</text>
 <polyline points="604.5,164.0 618.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
 <rect x="757.5" y="112" width="126" height="104" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
 <text x="820.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#7c4a05" text-anchor="middle">6  Adjudicate</text>
@@ -52,17 +52,17 @@
 <polyline points="744.0,164.0 757.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
 <rect x="897.0" y="112" width="126" height="104" rx="10" fill="#f0ebff" stroke="#6d4bd8" stroke-width="1.6"/>
 <text x="960.0" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#432a91" text-anchor="middle">7  Compare</text>
-<text x="960.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runtime_comparison</text>
-<text x="960.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">(FAILURE-SAFE, after</text>
-<text x="960.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">the HTTP result)</text>
+<text x="960.0" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">runtime comparison</text>
+<text x="960.0" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ suitability</text>
+<text x="960.0" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">(FAILURE-SAFE, after HTTP)</text>
 <polyline points="883.5,164.0 897.0,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
 <rect x="1036.5" y="112" width="126" height="104" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
 <text x="1099.5" y="146.7" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0d5427" text-anchor="middle">8  Publish</text>
 <text x="1099.5" y="161.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">results.json,</text>
 <text x="1099.5" y="175.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">report.html, status.json</text>
-<text x="1099.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ comparison files</text>
+<text x="1099.5" y="189.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="9" font-weight="400" fill="#5b6b7d" text-anchor="middle">+ comparison / suitability</text>
 <polyline points="1023.0,164.0 1036.5,164.0" fill="none" stroke="#7a8899" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#ar_gray)"/>
-<text x="60" y="254" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">SMOKE PROFILE  -  8 phases, ~33 s total, peak C=20 (quick ~3.5 min / standard ~24 min share the same shape)</text>
+<text x="60" y="254" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">SMOKE PROFILE  -  8 phases, ~33 s total, peak C=20 (quick ~3.5 min / heavy ~5.5 min / stress ~10.5 min / standard ~24 min share the same shape)</text>
 <rect x="60.0" y="276" width="96.36363636363636" height="66" rx="7" fill="#eff3f8" stroke="#7a8899" stroke-width="1.4"/>
 <text x="108.18181818181819" y="298" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" fill="#3f4c5c" text-anchor="middle">01 plateau</text>
 <text x="108.18181818181819" y="316" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#16202c" text-anchor="middle">C=0</text>
@@ -102,15 +102,17 @@
 <polyline points="60,268 1164,268" fill="none" stroke="#7a8899" stroke-width="1.5" marker-end="url(#ar_gray)"/>
 <text x="60" y="392" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">time  -&gt;</text>
 <rect x="60" y="412" width="540" height="66" rx="10" fill="#fff2dc" stroke="#c07a12" stroke-width="1.6"/>
-<text x="330.0" y="441.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#7c4a05" text-anchor="middle">Guardrails can abort early</text>
-<text x="330.0" y="457.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">error-rate ceiling, OOM / restart, host free-RAM floor -&gt; partial results are still written</text>
+<text x="330.0" y="434.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#7c4a05" text-anchor="middle">Guardrails can abort early</text>
+<text x="330.0" y="449.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">generator working-set ceiling, host RAM floor, error-rate ceiling,</text>
+<text x="330.0" y="464.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">consecutive-failure breaker -&gt; partial results are written (right-censored)</text>
 <rect x="620" y="412" width="544" height="66" rx="10" fill="#e6f6ea" stroke="#18803d" stroke-width="1.6"/>
-<text x="892.0" y="441.8" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">Step 7 cannot lose step 4</text>
-<text x="892.0" y="457.1" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">comparison runs AFTER aggregation + grading; any exception becomes a warning in results.json</text>
+<text x="892.0" y="434.2" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12.5" font-weight="700" fill="#0d5427" text-anchor="middle">Step 7 cannot lose step 4</text>
+<text x="892.0" y="449.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">comparison + suitability run AFTER aggregation + grading;</text>
+<text x="892.0" y="464.6" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10" font-weight="400" fill="#5b6b7d" text-anchor="middle">any exception becomes a warning in results.json</text>
 <text x="60" y="512" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#16202c" text-anchor="start">WHY THE PHASES EXIST</text>
 <rect x="60" y="526" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
 <text x="72" y="545" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">01 idle</text>
-<text x="72" y="562" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">capture baseline CPU / anon memory so net values can be derived</text>
+<text x="72" y="562" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">capture baseline generator CPU / working set so net values can be derived</text>
 <rect x="630" y="526" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
 <text x="642" y="545" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">02-03</text>
 <text x="642" y="562" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">warm the target, then step concurrency up instead of hammering cold</text>
@@ -122,10 +124,10 @@
 <text x="642" y="620" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">short burst to expose queueing and tail-latency blow-ups</text>
 <rect x="60" y="642" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
 <text x="72" y="661" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">07 cooldown</text>
-<text x="72" y="678" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">zero load; S6 checks memory is actually released</text>
+<text x="72" y="678" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">zero load; recovery behaviour means the same thing in every profile</text>
 <rect x="630" y="642" width="546" height="48" rx="7" fill="#f8fafc" stroke="#d8e1ec" stroke-width="1"/>
 <text x="642" y="661" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#0b5c53" text-anchor="start">08 reprobe</text>
 <text x="642" y="678" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">S7 confirms the target still answers after the whole schedule</text>
 <line x1="36" y1="736" x2="1164" y2="736" stroke="#d8e1ec" stroke-width="1"/>
-<text x="36" y="756" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/config.py (preset_phases), engine.py (_run_phase / _guard_check), runner.py (run_benchmark), grading.py (S1-S9)</text>
+<text x="36" y="756" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="10.5" font-weight="400" fill="#5b6b7d" text-anchor="start">Sources: heavyload/config.py (preset_phases: 5 profiles), engine.py (_run_phase / _guard_check), runner.py (preflight / run_benchmark), grading.py (S1-S9)</text>
 </svg>

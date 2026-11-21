@@ -1,12 +1,15 @@
-"""Per-site target specs: the data model for future multi-language campaigns.
+"""Per-site target specs: the data model for multi-language campaigns.
 
-A spec describes ONE website/runtime so that N sites can later be run through
-an identical workload and compared fairly. This round the loader only
-VALIDATES and LABELS a spec (``apply_to_config`` can turn one spec into a v2
-single-target config); campaign execution is Phase 2 (``docs/phase2-roadmap``).
+A spec describes ONE website/runtime so that N sites can run through an
+identical workload and be compared fairly. v2 removed the Docker launcher:
+targets are started NATIVELY on this host via the ``native.start_cmd`` field
+(or manually - the spec then serves as metadata). The Docker-era fields
+(``image``, ``container``, cpuset limits) are tolerated on legacy specs and
+ignored.
 
 All resources live under ``targets/``. ``targets/_schema.json`` is the
 machine-readable contract; ``targets/examples/`` has ready-to-edit templates.
+``scripts/native_target.py`` starts/stops a spec's native process.
 """
 
 from __future__ import annotations
@@ -29,12 +32,13 @@ SPEC_DEFAULTS = {
     "image_digest": "",
     "build_cmd": "",
     "start_cmd": "",
-    "container": "",
     "host_port": 8090,
     "health_path": "/health",
     "routes": [{"path": "/", "weight": 100, "method": "GET",
                 "expected_status": 200, "expected_payload_sha": ""}],
     "resource_limits": {"cpus": 1.0, "cpuset_cpus": "", "mem_limit_mb": 512},
+    "native": {"start_cmd": "", "working_dir": "", "build_cmd": "",
+               "ready_probe": True},
     "warmup": {"duration_s": 10, "requests": 1000},
     "repeat_count": 3,
     "cooldown_between_repeats_s": 15,
@@ -64,8 +68,8 @@ def validate(spec):
             raise ValueError("site_id is required")
         if not s["language"]:
             raise ValueError("language is required (e.g. python, node, go, java)")
-        if not s["image"]:
-            raise ValueError("image is required (a Docker image reference)")
+        # image/container are legacy Docker-era fields: tolerated, never
+        # required. A native start command is what launches a target now.
         s["host_port"] = int(s["host_port"])
         if not 1 <= s["host_port"] <= 65535:
             raise ValueError("host_port out of range")
@@ -84,6 +88,11 @@ def validate(spec):
         lim = s["resource_limits"]
         lim["cpus"] = max(0.1, float(lim["cpus"]))
         lim["mem_limit_mb"] = max(64, int(lim["mem_limit_mb"]))
+        native = s["native"]
+        native["start_cmd"] = str(native.get("start_cmd") or "").strip()
+        native["working_dir"] = str(native.get("working_dir") or "").strip()
+        native["build_cmd"] = str(native.get("build_cmd") or "").strip()
+        native["ready_probe"] = bool(native.get("ready_probe", True))
         s["warmup"]["duration_s"] = max(0, int(s["warmup"]["duration_s"]))
         s["cooldown_between_repeats_s"] = max(
             0, int(s["cooldown_between_repeats_s"]))
@@ -134,10 +143,9 @@ def list_specs(root=None):
 
 
 def apply_to_config(cfg, spec):
-    """Fold a validated spec into a v2 single-target config (no batch yet)."""
+    """Fold a validated spec into a v2 single-target config."""
     out = copy.deepcopy(cfg)
     out["target_url"] = "http://localhost:%d/" % spec["host_port"]
-    out["container"] = spec.get("container") or spec["site_id"]
     out["health_path"] = spec["health_path"]
     out["paths"] = [{"path": r["path"], "weight": r["weight"]}
                     for r in spec["routes"]]
@@ -164,15 +172,35 @@ def apply_to_config(cfg, spec):
     return out
 
 
-def docker_run_args(spec):
-    """Build a ``docker run`` argv with the spec's resource limits."""
-    lim = spec["resource_limits"]
-    name = spec.get("container") or spec["site_id"]
-    argv = ["docker", "run", "-d", "--name", name,
-            "-p", "%d:%d" % (spec["host_port"], spec["host_port"]),
-            "--cpus", str(lim["cpus"]),
-            "--memory", "%dm" % lim["mem_limit_mb"]]
-    if lim.get("cpuset_cpus"):
-        argv += ["--cpuset-cpus", str(lim["cpuset_cpus"])]
-    argv.append(spec["image"])
-    return argv
+def native_start_argv(spec):
+    """Shell-argv for the spec's native start command (used by
+    scripts/native_target.py). Empty when the spec has none."""
+    cmd = ((spec.get("native") or {}).get("start_cmd")
+           or spec.get("start_cmd") or "").strip()
+    if not cmd:
+        return []
+    import shlex
+    return shlex.split(cmd, posix=False) if os.name == "nt" else \
+        shlex.split(cmd)
+
+
+def native_build_argv(spec):
+    """Shell-argv for the spec's native build command (optional)."""
+    cmd = str((spec.get("native") or {}).get("build_cmd") or "").strip()
+    if not cmd:
+        return []
+    import shlex
+    return shlex.split(cmd, posix=False) if os.name == "nt" else \
+        shlex.split(cmd)
+
+
+def native_working_dir(spec, root=None):
+    """Resolved working directory for the native target process."""
+    workdir = str((spec.get("native") or {}).get("working_dir") or "").strip()
+    if workdir and os.path.isdir(workdir):
+        return os.path.normpath(workdir)
+    base = os.path.dirname(str((spec.get("_spec_path") or "")) or "") \
+        if isinstance(spec.get("_spec_path"), str) else ""
+    if base and os.path.isdir(base):
+        return os.path.normpath(base)
+    return os.path.normpath(root or paths.ROOT)

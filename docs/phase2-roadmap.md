@@ -1,92 +1,65 @@
-# Phase 2 roadmap — multi-language benchmark campaigns
+# Roadmap — multi-language benchmark campaigns and beyond
 
-**Status (this round):** Sections **1 (Campaign file + batch runner)** and
-**2 (Comparison / leaderboard)** are **BUILT and tested**. Sections 3–5
-(deeper runtime collectors, max-rigor isolation, workload realism) remain
-deferred — they are additive on top of the now-working comparison core.
+**Status (v2):** Campaigns and comparisons are **BUILT and tested**. The v2
+round added the 14-language runtime comparison, measured per-variant
+resources (procmetrics), scalability analysis, data-quality checks, the
+technology suitability assessment, heavy/stress profiles and native (Docker-
+free) target lifecycle. Container instrumentation was removed; see
+[comparability.md](comparability.md) for the single-host comparability policy.
 
 ## What is built
 
-- `benchmarks/lang-runtime.json` — example campaign referencing
-  `targets/examples/*.json` specs under one shared `smoke` profile.
-- `heavyload/campaign.py` — batch runner: per site, warm-up (discarded) +
-  `repeat_count` measured passes, per-site median/mean/stddev aggregation,
-  `can_compare` guard, graceful stop, writes `campaign.json` + `report.html` +
-  `leaderboard.csv` / `leaderboard.json`.
-- `heavyload/compare.py` — pure comparison core: load existing runs, normalise
-  to a leaderboard view, enforce `schema.can_compare`, CSV/JSON export.
-- `heavyload/report_compare.py` — multi-run HTML report with inline SVG bars
-  and a comparability badge (honest warning, never a misleading ranking).
-- CLI: `python cli.py --campaign <file>` and `python cli.py --compare id1 id2 …`
-  (`--output <dir>`), plus `--list-campaigns`.
-- Server: `/api/campaign/list`, `/api/campaign/start`, `/api/campaign/status`,
-  `/api/compare`, `/api/compare/report`, `/api/export`.
-- UI: Campaigns section (start/stop + live progress + history) and a
-  multi-select Compare/Export bar on the Past runs table.
+- Campaigns: `benchmarks/<name>.json` → `heavyload/campaign.py` (per site:
+  warm-up discarded + `repeat_count` measured passes, median aggregation,
+  `can_compare` guard, graceful stop, `campaign.json` + `report.html` +
+  leaderboard CSV/JSON). Start targets natively with
+  `scripts/native_target.py <site> start`.
+- Comparisons: `heavyload/compare.py` + `report_compare.py` with a
+  comparability badge and CSV/JSON export; UI multi-select Compare/Export.
+- Language comparison: 14-language registry (`comparison_sources/`),
+  checksum integrity gate, medians + dispersion + CIs, OS-measured peak
+  memory/CPU per variant, slowdown ratios + pairwise geomean matrix,
+  `cli.py --verify-sources`.
+- Suitability: `heavyload/suitability.py` with measured + labelled
+  documented criteria and per-row provenance shares.
+- Quality + scalability: `heavyload/quality.py`, `heavyload/scalability.py`
+  wired into every run and the report.
 
-## Current state (foundation)
+## Deferred (still valuable, in rough order)
 
-- v2 result schema with `benchmark_mode`, `visibility`, `target`, `metrics`,
-  `per_metric_visibility`, `environment.fingerprint`, `verdict_code`.
-- `heavyload/targetspec.py` + `targets/_schema.json` + example specs.
-- `Collection` and `RuntimeAdapter` interfaces, one working reference adapter,
-  thin endpoint adapters for Node/JVM/Go/PHP-FPM/.NET.
-- Optional browser metrics via stdlib CDP.
-- `config.fairness` (warm-up, repeats, seed, median aggregation, CPU pinning),
-  idle-baseline subtraction, TTFB/coordinated-omission timing.
-- `runner.list_runs(..., include_archive=True)` already returns `language`,
-  `site_id`, `benchmark_mode`, `visibility` per run.
+### 1. HTTP campaign criteria feeding the suitability ranking
+The suitability module reserves weights for `http_throughput`, `http_latency`
+and `http_stability` but excludes them from single-run scoring. Wiring
+campaign leaderboards into `suitability.build()` (per-language measured
+values + repeat-CV dispersion) activates them.
 
-## To build
+### 2. Deeper runtime collectors
+Dedicated adapters replacing the generic `/__hlc/runtime` endpoint: JMX /
+Spring Actuator, V8 `getHeapStatistics` + GC observer, Go `/debug/pprof` +
+`runtime/metrics`, `dotnet-counters`, PHP-FPM status, jemalloc stats for
+Rust. All slot into `heavyload/adapters/` (`server_via_adapter` visibility)
+without touching the engine.
 
-### 1. Campaign file + batch runner — ✅ BUILT
-`benchmarks/<campaign>.json` references N `targets/*.json` specs plus one shared
-workload/profile. `heavyload/campaign.py`:
+### 3. Open-loop workload model
+The closed-loop pool is deliberately simple and identical across languages;
+an open-loop (paced) mode would measure queueing behaviour at arrival rate
+rather than saturation. Requires scheduler work in `engine.py` plus new
+quality checks (paced-vs-actual drift).
 
-- For each site -> each repeat: warm-up (discarded) -> idle baseline -> seeded
-  identical workload -> cooldown.
-- Writes `series.repeats[]` (via the standard per-run results), aggregates with
-  median + stddev/variance across measured repeats.
-- **Hard rule** (`schema.metrics.can_compare`): refuses to compare runs whose
-  `benchmark_mode`, `visibility`, `schema_version` or `workload_class` differ,
-  or whose runs are client-only. Warns instead of producing a misleading number.
-- Server allows one campaign (or one single run) at a time (409 busy) with
-  per-campaign progress in `/api/campaign/status` and a graceful Stop.
-
-### 2. Comparison / leaderboard — ✅ BUILT
-- `heavyload/report_compare.py`: multi-run HTML + inline SVG bars
-  (reusing `report.py`'s chart helpers).
-- `/api/compare` + `/api/compare/report` endpoints, and a comparison view in
-  `ui/app.js` (multi-select checkboxes in the Past runs table).
-- CSV/JSON export of the normalised leaderboard view via `/api/export`.
-- Leaderboard columns: `RPS (overall)`, `RPS (peak phase)`, `p95 ms (as-sched)`,
-  `Error %`, `CPU peak/mean % (net)`, `Mem peak MiB (net)`, `Mem Δ MiB`,
-  `MB / 1k req`, `Health /100`, `Verdict`, `image_digest`.
-
-### 3. Deeper runtime collectors
-- Dedicated adapters replacing the generic `/__hlc/runtime` endpoint: JMX /
-  Spring Actuator, V8 `getHeapStatistics` + GC observer, Go `/debug/pprof` and
-  `runtime/metrics`, `dotnet-counters`, PHP-FPM status, Rust `jemalloc` stats.
-- `instrumented_live` mode: node_exporter / cAdvisor / Prometheus / APM
-  collector for servers you own but do not run in Docker.
-
-### 4. Maximum-rigor isolation (optional)
-- A dedicated collector **sidecar** container (`--pid=container:<target>` with
-  a read-only `/sys/fs/cgroup` mount) so cgroup reads are not charged to the
-  target cgroup at all.
-- A separate load-generator container on the Docker network, replacing the
-  Windows GIL-bound thread pool, eliminating generator/target CPU contention.
-- Both plug into `collectors.base.Collector` / `config.generator.isolated`
-  without touching `engine.py` internals.
-
-### 5. Workload realism
+### 4. Workload realism
 POST / auth / cookies / sessions, browser-driven scenarios, DB seeding, and
 per-route payload hashing (`expected_payload_sha`) so every language really
 serves the same bytes.
 
+### 5. Cross-machine campaign orchestration
+Run the same campaign on N hosts and aggregate with a machine-level
+`generator_fingerprint`; the comparability gate already refuses cross-host
+pairing, so this needs an explicit "consent + label" extension rather than a
+silent widening.
+
 ## Ordering rationale
 
-Do (1) and (2) before (3)-(5): a comparison report with honest, comparable
-numbers is more valuable than deeper metrics on a single site. The fairness
-controls and the `can_compare` guard exist precisely to stop an early
-cross-language comparison from being wrong.
+The comparison core exists so that every new metric lands inside an honest,
+gated pipeline. Item 1 is next because it completes the suitability data
+model with measurements you already collect; deeper collectors and workload
+realism stay additive after that.

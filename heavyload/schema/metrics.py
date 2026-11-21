@@ -20,7 +20,8 @@ import copy
 SCHEMA_VERSION = 2
 
 BENCHMARK_MODES = ("docker_lab", "live_blackbox", "instrumented_live")
-VISIBILITY_LEVELS = ("full_server", "client_only", "server_via_adapter")
+VISIBILITY_LEVELS = ("full_server", "client_only", "client_only_same_host",
+                     "server_via_adapter")
 VERDICT_CODES = ("GO", "NO_GO", "NO_GO_ABORT", "INSUFFICIENT")
 
 _UNAVAILABLE = "unavailable"
@@ -54,6 +55,11 @@ def empty_fingerprint():
         "host_shared_cpu": False,
         "generator_pinned": False,
         "seed": None,
+        # Single-host comparability (client-only runs): stable identity of the
+        # load generator (hostname|platform|machine|cpu_count) and of the
+        # target host. Two client-only runs may only be ranked when BOTH match.
+        "generator_fingerprint": "",
+        "target_host": "",
     }
 
 
@@ -160,8 +166,18 @@ def verdict_code(verdict_text):
 def can_compare(a, b):
     """Hard rule: never compare runs measured from different vantage points.
 
-    Returns ``(bool, reason)``. Called by the future campaign/comparison
-    layer; implemented now so the invariant is enforced from day one.
+    Returns ``(bool, reason)``. Called by the campaign/comparison layer.
+
+    Comparability rules (v2):
+      * ``docker_lab`` / ``instrumented_live`` runs compare as before (server
+        evidence present, same mode/schema/workload class).
+      * Plain ``client_only`` runs (REMOTE targets, or archived runs without
+        the generator fingerprint) are never comparable: network conditions
+        cannot be held constant and no server evidence exists.
+      * ``client_only_same_host`` runs (loopback targets, same machine, same
+        profile) ARE rankable as a single-host client-side comparison — with
+        the explicit caveat that this measures the full stack through one
+        network path, not server-side resource usage.
     """
     if not isinstance(a, dict) or not isinstance(b, dict):
         return False, "not a result object"
@@ -174,8 +190,24 @@ def can_compare(a, b):
     bm = (b.get("meta") or {}).get("workload_class") or "http_loadtest"
     if am != bm:
         return False, "workload_class differs (%r vs %r)" % (am, bm)
-    if a.get("visibility") == "client_only":
-        return False, "client-only runs have no server metrics to compare"
+    vis = a.get("visibility")
+    if vis == "client_only":
+        return False, "client-only runs against remote targets have no " \
+                      "server metrics and uncontrolled network conditions"
+    if vis == "client_only_same_host":
+        afp = (a.get("environment") or {}).get("fingerprint") or {}
+        bfp = (b.get("environment") or {}).get("fingerprint") or {}
+        agen = afp.get("generator_fingerprint") or ""
+        bgen = bfp.get("generator_fingerprint") or ""
+        if not agen or not bgen:
+            return False, "generator fingerprint missing (archived run?)"
+        if agen != bgen:
+            return False, "runs were generated on different machines (%r vs %r)" \
+                % (agen, bgen)
+        if afp.get("target_host") != bfp.get("target_host"):
+            return False, "target host differs (%r vs %r)" % (
+                afp.get("target_host"), bfp.get("target_host"))
+        return True, "comparable (single-host client-side comparison)"
     return True, "comparable"
 
 
