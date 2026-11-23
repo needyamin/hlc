@@ -1,20 +1,33 @@
-# Byte-code caches
+# Byte-code & tool caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
-# Generated benchmark output (recreated by runner.py)
+# Generated benchmark & campaign outputs (recreated by runner.py / campaign.py)
 runs/*
 !runs/.gitkeep
+benchmarks/campaign-*/
+benchmarks/compare-*/
 
 # Reversible archive of legacy sources and past runs
 _archive/
 
-# Local environment / logs
+# Local environment / logs / scratch
 *.log
+*.tmp
+*.bak
 .env
 .venv/
 venv/
 .workbuddy-ai/
+.zcode/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
 # Local preview / scratch
 ui_preview.png

@@ -30,6 +30,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+from heavyload import target_manager  # noqa: E402
 from heavyload import targetspec  # noqa: E402
 from heavyload.runner import http_probe  # noqa: E402
 from heavyload.util import atomic_json  # noqa: E402
@@ -167,36 +168,48 @@ def main(argv):
         return 0 if stopped else 1
 
     if action == "start":
-        argv_start = targetspec.native_start_argv(spec)
-        if not argv_start:
+        argv_start, cwd, resolve_err = target_manager.resolve_argv_and_cwd(
+            spec, ROOT)
+        if not targetspec.native_start_argv(spec):
             print("Spec %s has no native.start_cmd; start the target "
                   "manually, then run the benchmark against port %d."
                   % (site_id, spec["host_port"]))
             return 0
+        if resolve_err or not argv_start or not cwd:
+            print("Cannot start %s: %s" % (site_id, resolve_err),
+                  file=sys.stderr)
+            return 1
         existing = _load_pid(site_id)
         if _alive(existing):
             print("%s already running as pid %d" % (site_id, existing))
             return 0
-        cwd = targetspec.native_working_dir(spec, root=ROOT)
+        import subprocess
         build_argv = targetspec.native_build_argv(spec)
         if build_argv:
             print("Building:", " ".join(str(a) for a in build_argv))
-            prior = os.getcwd()
-            os.chdir(cwd)
-            try:
-                os.spawnve(os.P_WAIT, build_argv[0], build_argv,
-                           dict(os.environ))
-            finally:
-                os.chdir(prior)
+            b_exe = target_manager._resolve_executable(build_argv[0], cwd)
+            if not b_exe:
+                print("Build executable not found: %s" % build_argv[0],
+                      file=sys.stderr)
+                return 1
+            subprocess.run([b_exe] + build_argv[1:], cwd=cwd, check=True)
         env = dict(os.environ)
         env["HLC_TARGET_SITE"] = str(site_id)
-        prior = os.getcwd()
-        os.chdir(cwd)
-        try:
-            pid = os.spawnve(os.P_NOWAIT, argv_start[0], argv_start, env)
-        finally:
-            os.chdir(prior)
+        env["HLC_PORT"] = str(spec["host_port"])
         os.makedirs(PID_DIR, exist_ok=True)
+        log_fp = open(os.path.join(PID_DIR, "%s.log" % site_id), "wb")
+        popen_kw = {
+            "cwd": cwd, "env": env,
+            "stdin": subprocess.DEVNULL,
+            "stdout": log_fp, "stderr": subprocess.STDOUT,
+        }
+        if os.name == "nt":
+            popen_kw["creationflags"] = (
+                getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                | getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
+        proc = subprocess.Popen(argv_start, **popen_kw)
+        pid = int(proc.pid)
+        log_fp.close()
         atomic_json(_pid_path(site_id),
                     {"site_id": site_id, "pid": pid,
                      "start_cmd": argv_start, "cwd": cwd,

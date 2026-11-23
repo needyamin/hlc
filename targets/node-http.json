@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "site_id": "node-http",
+  "group": "hlc-http",
+  "language": "node",
+  "runtime_version": "26.11.1",
+  "framework": "http (core)",
+  "framework_version": "26.11.1",
+  "image": "",
+  "image_digest": "",
+  "build_cmd": "",
+  "start_cmd": "node server.js",
+  "host_port": 18092,
+  "health_path": "/health",
+  "routes": [
+    {"path": "/", "weight": 30, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/health", "weight": 20, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/catalog", "weight": 25, "method": "GET", "expected_status": 200, "expected_payload_sha": ""},
+    {"path": "/cart", "weight": 25, "method": "GET", "expected_status": 200, "expected_payload_sha": ""}
+  ],
+  "resource_limits": {"cpus": 1.0, "cpuset_cpus": "", "mem_limit_mb": 512},
+  "native": {
+    "start_cmd": "node server.js",
+    "working_dir": "apps/node-http",
+    "build_cmd": "",
+    "ready_probe": true
+  },
+  "warmup": {"duration_s": 0, "requests": 0},
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 5,
+  "seed_workload": {"seed": 7919, "paths_file": ""},
+  "adapter": {"type": "", "endpoint": "/__hlc/runtime"}
+}

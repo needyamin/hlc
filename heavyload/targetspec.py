@@ -196,11 +196,16 @@ def native_build_argv(spec):
 
 def native_working_dir(spec, root=None):
     """Resolved working directory for the native target process."""
+    base_root = root or paths.ROOT
     workdir = str((spec.get("native") or {}).get("working_dir") or "").strip()
-    if workdir and os.path.isdir(workdir):
-        return os.path.normpath(workdir)
+    if workdir:
+        cand = workdir if os.path.isabs(workdir) else os.path.join(base_root, workdir)
+        if os.path.isdir(cand):
+            return os.path.normpath(cand)
+        if os.path.isdir(workdir):
+            return os.path.normpath(workdir)
     base = os.path.dirname(str((spec.get("_spec_path") or "")) or "") \
         if isinstance(spec.get("_spec_path"), str) else ""
     if base and os.path.isdir(base):
         return os.path.normpath(base)
-    return os.path.normpath(root or paths.ROOT)
+    return os.path.normpath(base_root)

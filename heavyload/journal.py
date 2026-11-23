@@ -715,6 +715,7 @@ def abstract(results, rc_data, su_data):
            (max(d["geomean"] or 0 for d in rows.values()) /
             max(fastest[1]["geomean"] or 1, 1e-9))))
     if native:
+        vm_slow = slow.get("spid3r_vm") or slow.get("spid3r_bytecode") or {}
         sentences.append(
             "The Spid3r subject language was measured through every engine "
             "variant. Its <strong>native --release build</strong> achieved a "
@@ -735,7 +736,7 @@ def abstract(results, rc_data, su_data):
                if (native.get("vs_php") or {}).get("geomean") and
                (native.get("vs_php") or {}).get("geomean") < 1
                else "at parity with the classic web baselines",
-               _e(_f((native.get("vs_php") or {}).get("geomean"), 2)) or "n/a",
+               _e(_f((vm_slow.get("vs_php") or {}).get("geomean"), 2)) or "n/a",
                _e(_f(next((d["rss_mib"] for k, d in rows.items()
                            if k == "spid3r_native"), None), 1)) or "n/a"))
     if sp_row:
@@ -744,12 +745,14 @@ def abstract(results, rc_data, su_data):
             "<strong>#%s of %d</strong> (%s/100) with the highest measured "
             "share of any row (%s%%); its weakest measured criterion is "
             "compute performance on interpreter-style engines, its strongest "
-            "is memory efficiency. The fastest-ranked language overall is "
+            "is memory efficiency. The highest-ranked language overall is "
             "<strong>%s</strong> (%s/100)."
-            % (sp_row.get("rank"), len(ranked), _e(sp_row.get("overall_score")),
+            % (sp_row.get("measured_rank") or sp_row.get("rank"),
+               len(su_data.get("measured_ranked") or ranked),
+               _e(sp_row.get("overall_score")),
                _e(sp_row.get("measured_weight_share")),
                _e(fastest_su.get("label") or "n/a"),
-               _e(fastest_su.get("score"))))
+               _e(fastest_su.get("overall_score"))))
     sentences.append(
         "Every number in this report is a measurement of this machine — no "
         "simulation, no extrapolation; missing toolchains and metrics are "

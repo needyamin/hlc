@@ -24,6 +24,7 @@ from . import config as C
 from . import compare
 from . import runner
 from . import schema
+from . import target_manager
 from . import targetspec
 from .util import atomic_json, stamp, utc
 
@@ -89,7 +90,7 @@ def _build_site_config(spec, site_id, root):
 
 
 def _one_pass(cfg, root, log, on_event):
-    info = runner.run_benchmark(cfg, root, log=log)
+    info = runner.run_benchmark(cfg, root, log=log, keep_target_alive=True)
     if on_event:
         on_event({"type": "run_done", "run_id": info["run_id"]})
     return info["run_id"]
@@ -165,29 +166,42 @@ def run_campaign(root, spec, log=None, on_event=None, should_stop=None):
             continue
 
         warmup_ids, measured_ids = [], []
-        for i in range(spec["warmup_runs"]):
-            if _stopped():
-                stopped = True
-                break
-            if log:
-                log.add("[%s] warm-up pass %d/%d"
-                        % (site_id, i + 1, spec["warmup_runs"]))
-            warmup_ids.append(_one_pass(cfg, root, log, on_event))
-        if _stopped():
-            stopped = True
-        for i in range(spec["repeat_count"]):
-            if _stopped():
-                stopped = True
-                break
-            if log:
-                log.add("[%s] measured pass %d/%d"
-                        % (site_id, i + 1, spec["repeat_count"]))
-            measured_ids.append(_one_pass(cfg, root, log, on_event))
-            if i < spec["repeat_count"] - 1 and spec["cooldown_between_repeats_s"]:
+        auto_started_site = ""
+        try:
+            cfg_norm = C.normalize(cfg)
+            if (runner.is_loopback(cfg_norm)
+                    and target_manager.resolve_target_for_cfg(cfg_norm, root) is not None):
+                st = target_manager.ensure_target_running(cfg_norm, root, log=log)
+                if st.get("started"):
+                    auto_started_site = st.get("site_id") or ""
+            for i in range(spec["warmup_runs"]):
+                if _stopped():
+                    stopped = True
+                    break
                 if log:
-                    log.add("[%s] cooldown %ds before next repeat"
-                            % (site_id, spec["cooldown_between_repeats_s"]))
-                time.sleep(spec["cooldown_between_repeats_s"])
+                    log.add("[%s] warm-up pass %d/%d"
+                            % (site_id, i + 1, spec["warmup_runs"]))
+                warmup_ids.append(_one_pass(cfg, root, log, on_event))
+            if _stopped():
+                stopped = True
+            for i in range(spec["repeat_count"]):
+                if _stopped():
+                    stopped = True
+                    break
+                if log:
+                    log.add("[%s] measured pass %d/%d"
+                            % (site_id, i + 1, spec["repeat_count"]))
+                measured_ids.append(_one_pass(cfg, root, log, on_event))
+                if i < spec["repeat_count"] - 1 and spec["cooldown_between_repeats_s"]:
+                    if log:
+                        log.add("[%s] cooldown %ds before next repeat"
+                                % (site_id, spec["cooldown_between_repeats_s"]))
+                    time.sleep(spec["cooldown_between_repeats_s"])
+        finally:
+            if auto_started_site:
+                if log:
+                    log.add("[%s] stopping auto-started target" % auto_started_site)
+                target_manager.stop_target(auto_started_site, root=root)
 
         if _stopped():
             stopped = True
@@ -264,6 +278,15 @@ def run_campaign(root, spec, log=None, on_event=None, should_stop=None):
         "leaderboard": leaderboard,
     }
     atomic_json(os.path.join(out_dir, "campaign.json"), campaign)
+    if comparable and len(leaderboard) >= 2:
+        try:
+            from . import suitability as SU
+            su = SU.build({"target": {}}, C.normalize({}), out_dir,
+                          log=log, write_html=True)
+            campaign["suitability"] = SU.summarize(su)
+        except Exception as ex:
+            if log:
+                log.add("Campaign suitability assessment failed: %s" % ex, "warn")
     if on_event:
         on_event({"type": "campaign_done", "campaign_id": campaign_id})
 

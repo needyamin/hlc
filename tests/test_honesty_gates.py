@@ -128,5 +128,65 @@ class TestDeadTargetRefusesToRun(unittest.TestCase):
                                          preflight_result=pf)
 
 
+class TestReportOverflowAndHonesty(unittest.TestCase):
+    def test_runtime_comparison_html_wraps_all_tables_and_never_fakes_na(self):
+        import re
+        from heavyload import runtime_comparison as RC
+
+        data = {
+            "schema_version": 2,
+            "generated_utc": "2026-11-23T00:00:00Z",
+            "status": "ok",
+            "config_meta": {"repeats": 3},
+            "environment": {"runtime_environment": "Host", "python": "3.15"},
+            "workloads": {
+                "prime": {
+                    "id": "A", "title": "Prime", "constants": "N=50000",
+                    "description": "prime test", "expected_checksum": RC.EXPECTED["prime"],
+                    "verified": True, "variants": 2,
+                    "rows": [
+                        {"key": "python", "runtime": "Python 3.15", "group": "baseline",
+                         "source": "host", "compute_ms": 20.0},
+                        {"key": "spid3r_vm", "runtime": "Spid3r VM", "group": "spid3r",
+                         "source": "host", "compute_ms": 60.0},
+                    ],
+                },
+            },
+            "summary": {
+                "workloads_verified": 1, "variants": 2,
+                "slowdown_range": {"min": None, "max": None},
+                "slowdown": {
+                    "spid3r_vm": {
+                        "label": "Spid3r VM",
+                        "vs_php": {"workloads": {}, "geomean": None},
+                        "vs_python": {"workloads": {"prime": 3.0}, "geomean": 3.0},
+                        "vs_fastest": {"workloads": {"prime": 3.0}, "geomean": 3.0},
+                    },
+                },
+                "matrix": {
+                    "python": {"label": "Python", "geomeans": {"spid3r_vm": 0.33}},
+                    "spid3r_vm": {"label": "Spid3r VM", "geomeans": {"python": 3.0}},
+                },
+                "quality": {"stable_variants": 0, "flagged_variants": 0,
+                            "worst_cv_pct": None, "thresholds": {}},
+                "verdict": "Measured only", "note": "",
+            },
+            "warnings": [],
+        }
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "runtime_comparison.html")
+            RC.build_html(data, out)
+            with open(out, "r", encoding="utf-8") as f:
+                html_txt = f.read()
+        self.assertIn(".tblwrap{overflow-x:auto", html_txt)
+        n_tables = len(re.findall(r"<table\b", html_txt))
+        n_wrapped = len(re.findall(r'<div class="tblwrap"><table\b', html_txt))
+        self.assertGreaterEqual(n_tables, 4)
+        self.assertEqual(n_tables, n_wrapped,
+                         "every table in runtime_comparison.html must be inside .tblwrap")
+        self.assertNotIn("n/a&times;", html_txt)
+        self.assertNotIn("n/a%", html_txt)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,18 +12,28 @@ TLS validator. That fact is disclosed in every report.
 from __future__ import annotations
 
 import http.client
+import os
 import ssl
 
 from . import latency
 
 
+def _dial_host(host):
+    """Avoid the ~2s Windows IPv6 ::1 fallback delay when dialling localhost
+    against IPv4-only local servers (which bind 127.0.0.1)."""
+    if os.name == "nt" and str(host or "").lower() == "localhost":
+        return "127.0.0.1"
+    return host
+
+
 def make_connection(scheme, host, port, timeout):
     """Return a new HTTP(S)Connection (not yet connected)."""
+    dial = _dial_host(host)
     if scheme == "https":
         return http.client.HTTPSConnection(
-            host, port, timeout=timeout,
+            dial, port, timeout=timeout,
             context=ssl._create_unverified_context())
-    return http.client.HTTPConnection(host, port, timeout=timeout)
+    return http.client.HTTPConnection(dial, port, timeout=timeout)
 
 
 def connection_kwargs(scheme, timeout):

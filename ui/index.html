@@ -45,6 +45,10 @@
         <input id="url" type="text" spellcheck="false"
                placeholder="http://localhost:8090/">
       </label>
+      <div id="local-targets-wrap" style="display:none;margin-bottom:10px">
+        <div class="hint" style="margin-bottom:6px">Local targets (auto-started on preflight or benchmark start):</div>
+        <div id="local-targets" class="chips" style="margin-bottom:0"></div>
+      </div>
       <div class="grid2">
         <label class="fld">
           <span>Instrumentation mode <em>(fixed)</em></span>
@@ -92,6 +96,13 @@
         </label>
       </div>
       <label class="check"><input id="keep-alive" type="checkbox"> Use HTTP keep-alive connections</label>
+      <div class="grid2" style="margin-top:8px;align-items:center">
+        <label class="check" style="margin:0"><input id="rc-enabled" type="checkbox"> Include cross-language runtime comparison</label>
+        <label class="fld" style="margin:0">
+          <span>Comparison repeats</span>
+          <input id="rc-repeats" type="number" min="1" max="20" step="1" value="3">
+        </label>
+      </div>
     </section>
 
     <details class="card advanced">

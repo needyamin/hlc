@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "title": "Multi-language HTTP comparison — Spid3r AOT vs Node vs Python",
+  "profile": "smoke",
+  "warmup_runs": 1,
+  "repeat_count": 3,
+  "cooldown_between_repeats_s": 5,
+  "fairness": {
+    "identical_workload": true,
+    "seed": 7919,
+    "aggregate": "median"
+  },
+  "sites": [
+    "spid3r-http",
+    "node-http",
+    "python-http"
+  ]
+}

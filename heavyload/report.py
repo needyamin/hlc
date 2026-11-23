@@ -81,16 +81,16 @@ def table(headers, rows, cls=""):
 
 
 def wrap_tables(html_fragment):
-    """Wrap every bare <table> in an overflow container.
+    """Wrap every bare <table> in an overflow container (idempotent).
 
     Used for embedded fragments (runtime comparison / suitability) whose
     tables are built directly; keeps wide tables from breaking the layout —
     they scroll horizontally inside their card instead.
     """
     import re
-    return re.sub(r"<table>(.*?)</table>",
-                  lambda m: '<div class="tblwrap"><table>%s</table></div>'
-                  % m.group(1), html_fragment, flags=re.DOTALL)
+    return re.sub(r'(?<!<div class="tblwrap">)(<table\b[^>]*>.*?</table>)',
+                  lambda m: '<div class="tblwrap">%s</div>' % m.group(1),
+                  html_fragment, flags=re.DOTALL)
 
 
 # ------------------------------------------------------------------- charts --

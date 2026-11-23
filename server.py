@@ -33,6 +33,8 @@ from heavyload import campaign as CAM  # noqa: E402
 from heavyload import compare as CMP  # noqa: E402
 from heavyload import report_compare  # noqa: E402
 from heavyload import paths  # noqa: E402
+from heavyload import target_manager  # noqa: E402
+from heavyload import targetspec  # noqa: E402
 from heavyload.util import LogBuffer, utc  # noqa: E402
 from heavyload.paths import (  # noqa: E402
     ROOT, CONFIG_PATH, UI_DIR, RUNS_DIR, SAFE_ARTIFACTS, BENCHMARKS_DIR,
@@ -88,10 +90,14 @@ def start_run():
 
     def work():
         try:
+            cached_pf = STATE.get("preflight")
+            if cached_pf and not cached_pf.get("ok"):
+                cached_pf = None
             info = runner.run_benchmark(
                 cfg, ROOT, log=STATE["log"],
-                preflight_result=STATE.get("preflight"),
-                bench_holder=STATE["bench_holder"])
+                preflight_result=cached_pf,
+                bench_holder=STATE["bench_holder"],
+                keep_target_alive=True)
             with STATE["lock"]:
                 STATE["state"] = "complete"
                 STATE["run_id"] = info["run_id"]
@@ -373,6 +379,14 @@ class Handler(BaseHTTPRequestHandler):
                     "status": current_status(),
                     "reports": runner.list_runs(ROOT, cfg=STATE["config"]),
                     "preflight": STATE.get("preflight"),
+                    "local_targets": target_manager.list_available_targets(
+                        ROOT, probe_live=False),
+                })
+            if p == "/api/targets":
+                return self._json({
+                    "ok": True,
+                    "targets": target_manager.list_available_targets(
+                        ROOT, probe_live=True),
                 })
             if p == "/api/status":
                 return self._json({"ok": True, **current_status(),
@@ -525,6 +539,14 @@ class Handler(BaseHTTPRequestHandler):
 
             if p == "/api/preflight":
                 cfg = C.normalize(STATE["config"])
+                if (runner.is_loopback(cfg)
+                        and target_manager.resolve_target_for_cfg(cfg, ROOT) is not None):
+                    try:
+                        target_manager.ensure_target_running(
+                            cfg, ROOT, log=STATE["log"])
+                    except Exception as ex:
+                        STATE["log"].add(
+                            "Auto-start before preflight failed: %s" % ex, "warn")
                 pf = runner.preflight(cfg)
                 with STATE["lock"]:
                     STATE["preflight"] = pf
@@ -535,8 +557,67 @@ class Handler(BaseHTTPRequestHandler):
 
             if p == "/api/routes":
                 cfg = C.normalize(STATE["config"])
+                if (runner.is_loopback(cfg)
+                        and target_manager.resolve_target_for_cfg(cfg, ROOT) is not None):
+                    try:
+                        target_manager.ensure_target_running(
+                            cfg, ROOT, log=STATE["log"])
+                    except Exception as ex:
+                        STATE["log"].add(
+                            "Auto-start before route discovery failed: %s" % ex,
+                            "warn")
                 rows = runner.discover_routes(cfg, body.get("candidates"))
                 return self._json({"ok": True, "routes": rows})
+
+            if p == "/api/targets/select":
+                site_id = str(body.get("site_id") or "").strip()
+                if not site_id:
+                    return self._err("missing site_id", 400)
+                sp_path = targetspec.find_spec(site_id, root=ROOT)
+                if not sp_path:
+                    return self._err("unknown target spec: %s" % site_id, 404)
+                spec, serr = targetspec.load_spec(sp_path)
+                if serr:
+                    return self._err("invalid target spec: %s" % serr, 400)
+                before = C.public_config(STATE["config"])
+                merged = targetspec.apply_to_config(before, spec)
+                norm, err = C.validate(merged)
+                if err:
+                    return self._err("configuration error: %s" % err, 400)
+                with STATE["lock"]:
+                    STATE["config"] = norm
+                    STATE["preflight"] = None
+                    C.save_config(CONFIG_PATH, norm)
+                STATE["log"].add("Selected local target '%s' (%s)"
+                                 % (site_id, norm["target_url"]))
+                if body.get("start"):
+                    try:
+                        target_manager.ensure_target_running(
+                            norm, ROOT, log=STATE["log"])
+                    except Exception as ex:
+                        STATE["log"].add("Target start failed: %s" % ex, "warn")
+                return self._json({
+                    "ok": True,
+                    "config": C.public_config(norm),
+                    "derived": {k: v for k, v in norm["_derived"].items()
+                                if k != "weighted_paths"},
+                    "targets": target_manager.list_available_targets(
+                        ROOT, probe_live=False),
+                })
+
+            if p == "/api/targets/stop":
+                site_id = str(body.get("site_id") or "").strip()
+                if site_id:
+                    target_manager.stop_target(site_id, root=ROOT)
+                    STATE["log"].add("Stopped local target '%s'" % site_id)
+                else:
+                    target_manager.stop_all_managed(ROOT)
+                    STATE["log"].add("Stopped all auto-started local targets")
+                return self._json({
+                    "ok": True,
+                    "targets": target_manager.list_available_targets(
+                        ROOT, probe_live=False),
+                })
 
             if p == "/api/run/start":
                 ok, msg = start_run()
@@ -593,6 +674,8 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\nShutting down.")
         srv.server_close()
+    finally:
+        target_manager.stop_all_managed(ROOT)
     return 0
 
 

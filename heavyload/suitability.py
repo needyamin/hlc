@@ -222,15 +222,46 @@ KB = {
     "matrix": {
         "ecosystem_maturity": (3, "Young single-vendor language (ANSNEW TECH); "
                                  "small production record so far"),
-        "ecosystem_libraries": (3, "Small standard-library surface today "
-                                   "(core collections, strings, JSON, timing)"),
-        # maintainability / reliability / concurrency_model: deliberately
-        # unassessed until there is a defensible basis - never invented.
+        "ecosystem_libraries": (5, "26 embedded stdlib modules and 254 "
+                                   "built-in native functions (HTTP/WS/TLS, "
+                                   "SQLite/PG/MySQL, JSON/TOML/YAML/XML/"
+                                   "CBOR/Protobuf, regex, Unicode/tz); young "
+                                   "third-party package registry"),
+        "maintainability": (6, "Static type checker, nullability narrowing, "
+                               "generics, canonical formatter (spid3r fmt), "
+                               "LSP, and published docs/LANGUAGE_SPEC.md; "
+                               "limited large-team track record"),
+        # reliability / concurrency_model: deliberately unassessed until
+        # multi-hour production soak evidence is established - never invented.
     },
 }
 
 # Registry key -> KB key (identity; 'node' covers JavaScript).
 KB_KEY = {}
+
+# Production-first representative order so Spid3r's subject row is compared
+# apples-to-apples against release/JIT baselines (rustc -O, Node, PHP, Python)
+# rather than diluted by unoptimized debug (--no-opt) or tree-walk modes.
+SPID3R_PRODUCTION_ORDER = (
+    "spid3r_native",
+    "spid3r_vm",
+    "spid3r_bytecode",
+    "spid3r_tw",
+    "spid3r_vm_noopt",
+)
+
+_LANG_ALIAS = {
+    "spid3r": "matrix",
+    "matrix": "matrix",
+    "javascript": "node",
+    "js": "node",
+    "nodejs": "node",
+    "node": "node",
+    "c#": "csharp",
+    ".net": "csharp",
+    "dotnet": "csharp",
+    "c++": "cpp",
+}
 
 
 def kb_for(key):
@@ -309,6 +340,91 @@ def _measured_scores(rc_data):
     }
 
 
+def _pick_spid3r_representative(raw_measured):
+    """Select one production-priority Spid3r variant consistently."""
+    avail = set()
+    for k, v in ((raw_measured or {}).get("compute_performance") or {}).items():
+        if str(k).startswith("spid3r") and v and v > 0:
+            avail.add(k)
+    if not avail:
+        for vals in (raw_measured or {}).values():
+            for k, v in (vals or {}).items():
+                if str(k).startswith("spid3r") and v and v > 0:
+                    avail.add(k)
+    for cand in SPID3R_PRODUCTION_ORDER:
+        if cand in avail:
+            return cand
+    return sorted(avail)[0] if avail else None
+
+
+def _measured_http_scores(campaign_data):
+    """Extract per-language HTTP metrics from a comparable multi-language campaign.
+
+    Single-target runs and non-comparable campaigns yield {} so single-run HTTP
+    numbers are never extrapolated into cross-language rankings.
+    """
+    if not isinstance(campaign_data, dict) or campaign_data.get("comparable") is not True:
+        return {}
+    lb = campaign_data.get("leaderboard") or []
+    if len(lb) < 2:
+        return {}
+
+    agg_by_site = {}
+    for site in campaign_data.get("sites") or []:
+        sid = site.get("site_id")
+        if sid:
+            agg_by_site[sid] = site.get("aggregated") or {}
+
+    best_by_lang = {}
+    for row in lb:
+        raw_lang = str(row.get("language") or "").strip().lower()
+        lang = _LANG_ALIAS.get(raw_lang, raw_lang)
+        rps = row.get("overall_rps")
+        if not lang or not rps or float(rps) <= 0:
+            continue
+        rps = float(rps)
+        prev = best_by_lang.get(lang)
+        if prev is not None and rps <= prev["rps"]:
+            continue
+        sid = row.get("site_id")
+        agg_rps = (agg_by_site.get(sid) or {}).get("overall_rps") or {}
+        med = agg_rps.get("median") or rps
+        sd = agg_rps.get("stddev") or 0.0
+        cv_pct = (
+            (100.0 * float(sd) / float(med))
+            if (med and float(med) > 0 and float(sd) >= 0)
+            else 0.0
+        )
+        p95 = row.get("p95_ms")
+        err_pct = max(0.0, float(row.get("error_pct") or 0.0))
+        best_by_lang[lang] = {
+            "rps": rps,
+            "p95": float(p95) if (p95 is not None and float(p95) > 0) else None,
+            "instability": 1.0 + err_pct + cv_pct,
+        }
+
+    if len(best_by_lang) < 2:
+        return {}
+    out = {
+        "http_throughput": {k: v["rps"] for k, v in best_by_lang.items()},
+        "http_latency": {k: v["p95"] for k, v in best_by_lang.items() if v["p95"] is not None},
+        "http_stability": {k: v["instability"] for k, v in best_by_lang.items()},
+    }
+    return {k: v for k, v in out.items() if len(v) >= 2}
+
+
+def _fmt_metric(crit, value):
+    if value is None:
+        return "n/a"
+    if crit == "memory_efficiency":
+        return "%.1f MiB" % (value / 1048576.0)
+    if crit == "http_throughput":
+        return "%.0f RPS" % value
+    if crit == "http_stability":
+        return "%.2f instability" % value
+    return _fmt(value)
+
+
 # ---------------------------------------------------------------------------
 # Assessment assembly
 # ---------------------------------------------------------------------------
@@ -341,31 +457,57 @@ def build(results, cfg, out_dir, log=None, write_html=True):
         except Exception:
             rc_data = {}
 
+    campaign_data = {}
+    camp_cfg_path = ((cfg.get("suitability") or {}).get("campaign_json")) or ""
+    for cp in (os.path.join(out_dir, "campaign.json"), camp_cfg_path):
+        if cp and os.path.isfile(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    campaign_data = json.load(f)
+                break
+            except Exception:
+                campaign_data = {}
+
     raw_measured = _measured_scores(rc_data)
-    # Collapse the Spid3r ENGINE variants (spid3r_tw / spid3r_vm / ...) into
-    # ONE subject row: the ranking compares LANGUAGES, and engine-variant
-    # detail lives in the dedicated Spid3r section + runtime comparison
-    # report. The merge is a geomean across variants (per criterion).
+    rep_key = _pick_spid3r_representative(raw_measured)
+
+    # Use ONE consistent production Spid3r variant (spid3r_native first) rather
+    # than averaging debug --no-opt / tree-walk timings into AOT results. All
+    # individual variants remain disclosed in data["spid3r"]["variants"].
     def _merge_spid3r(values):
-        vals = {k: v for k, v in (values or {}).items()
-                if str(k).startswith("spid3r") and v and v > 0}
-        rest = {k: v for k, v in (values or {}).items()
-                if not str(k).startswith("spid3r")}
-        if vals:
-            rest["matrix"] = math.exp(
-                sum(math.log(v) for v in vals.values()) / len(vals))
+        rest = {
+            k: v for k, v in (values or {}).items()
+            if not str(k).startswith("spid3r")
+        }
+        if rep_key and rep_key in (values or {}) and values[rep_key] and values[rep_key] > 0:
+            rest["matrix"] = values[rep_key]
+        else:
+            for cand in SPID3R_PRODUCTION_ORDER:
+                v = (values or {}).get(cand)
+                if v and v > 0:
+                    rest["matrix"] = v
+                    break
         return rest
-    raw_measured = {crit: _merge_spid3r(v)
-                    for crit, v in raw_measured.items()}
+
+    raw_measured = {crit: _merge_spid3r(v) for crit, v in raw_measured.items()}
+    http_measured = _measured_http_scores(campaign_data)
+    for crit in MEASURED_HTTP:
+        if crit in http_measured:
+            raw_measured[crit] = http_measured[crit]
+
     normalized = {}
     for crit, spec in CRITERIA.items():
-        if spec["provenance"] != "measured" or crit in MEASURED_HTTP:
-            continue                      # HTTP needs campaign data (future)
+        if spec["provenance"] != "measured":
+            continue
         vals = raw_measured.get(crit) or {}
+        if crit in MEASURED_HTTP and not vals:
+            continue
         normalized[crit] = _normalize(vals, spec["lower_is_better"])
 
     # Assemble rows for every language with measured data or a KB entry.
     langs = set(normalized.get("compute_performance") or {})
+    for crit in MEASURED_HTTP:
+        langs |= set(normalized.get(crit) or {})
     langs |= set(KB.keys())
     rows = []
     for key in sorted(langs):
@@ -374,7 +516,7 @@ def build(results, cfg, out_dir, log=None, write_html=True):
             if spec["provenance"] == "measured":
                 score = (normalized.get(crit) or {}).get(key)
                 value = (raw_measured.get(crit) or {}).get(key)
-                evidence = ("geomean %s" % _fmt(value)
+                evidence = ("geomean %s" % _fmt_metric(crit, value)
                             if value is not None else "no measured data")
             else:
                 kb = kb_for(key)
@@ -419,25 +561,45 @@ def build(results, cfg, out_dir, log=None, write_html=True):
             "criteria": criteria,
         })
     ranked = [r for r in rows if r["overall_score"] is not None]
-    ranked.sort(key=lambda r: -r["overall_score"])
+    has_any_measured = any((r.get("measured_weight_share") or 0) > 0 for r in ranked)
+    if has_any_measured:
+        # Never let 0%-measured KB-only rows outrank actually measured languages.
+        ranked.sort(key=lambda r: (
+            0 if (r.get("measured_weight_share") or 0) > 0 else 1,
+            -r["overall_score"],
+            r["language"],
+        ))
+    else:
+        ranked.sort(key=lambda r: (-r["overall_score"], r["language"]))
     for i, r in enumerate(ranked):
         r["rank"] = i + 1
+
+    measured_ranked = [r for r in ranked if (r.get("measured_weight_share") or 0) > 0]
+    for i, r in enumerate(measured_ranked):
+        r["measured_rank"] = i + 1
+    documented_only = [r for r in ranked if (r.get("measured_weight_share") or 0) == 0]
+
     data = {
-        "spid3r": _spid3r_report(rc_data, ranked),
-        "schema_version": 1,
+        "spid3r": _spid3r_report(
+            rc_data, ranked, rep_key=rep_key, measured_total=len(measured_ranked)
+        ),
+        "schema_version": 2,
         "generated_utc": utc(),
         "status": "ok" if ranked else "unavailable",
         "weights": {k: round(v, 4) for k, v in weights.items()},
         "criteria": {k: {"label": v["label"], "provenance": v["provenance"],
                          "desc": v["desc"]} for k, v in CRITERIA.items()},
         "ranked": ranked,
+        "measured_ranked": measured_ranked,
+        "documented_only": documented_only,
         "unranked": [r for r in rows if r["overall_score"] is None],
         "disclaimer": ("Documented criteria are curated qualitative "
                        "judgments about ecosystem characteristics, clearly "
                        "separated from measured values. Measured values come "
                        "from this run's checksum-verified runtime comparison "
-                       "on THIS machine. Scores are decision SUPPORT, not "
-                       "rankings to quote blindly."),
+                       "and comparable multi-language campaigns on THIS machine. "
+                       "Unmeasured KB-only reference rows are listed separately "
+                       "so 0%-measured opinions never outrank measured languages."),
         "warnings": [],
     }
     try:
@@ -495,7 +657,7 @@ def _label(key):
     }.get(key, key)
 
 
-def _spid3r_report(rc_data, ranked):
+def _spid3r_report(rc_data, ranked, rep_key=None, measured_total=0):
     """Dedicated Spid3r (subject language) evidence block.
 
     Aggregates, from the run's runtime comparison:
@@ -547,21 +709,29 @@ def _spid3r_report(rc_data, ranked):
     for r in ranked:
         if r.get("language") == "matrix":
             subject = {
-                "rank": r.get("rank"), "score": r.get("overall_score"),
+                "rank": r.get("rank"),
+                "measured_rank": r.get("measured_rank"),
+                "measured_total": measured_total,
+                "score": r.get("overall_score"),
                 "measured_share": r.get("measured_weight_share"),
                 "documented_pct": r.get("documented_weight_pct_of_total"),
                 "missing_pct": r.get("missing_weight_pct_of_total"),
+                "representative_variant": rep_key,
             }
             break
     has_comparison = bool(variants or workloads)
     return {
         "has_comparison": has_comparison,
+        "representative_variant": rep_key,
+        "representative_label": _label(rep_key) if rep_key else None,
         "subject": subject,
         "variants": variants,
         "workloads": workloads,
         "note": ("All Spid3r numbers come from checksum-verified, in-process "
-                 "timings of the pinned workloads; slowdown ratios compare "
-                 "against the same verified baselines."
+                 "timings of the pinned workloads; the overall ranking uses the "
+                 "production representative (%s) for apples-to-apples comparison "
+                 "while every engine variant is disclosed below."
+                 % (_label(rep_key) if rep_key else "production")
                  if has_comparison else
                  "This run disabled the runtime comparison "
                  "(--no-runtime-comparison), so no measured Spid3r data "
@@ -603,8 +773,10 @@ h1{margin:0 0 6px;font-size:24px}.sub{margin:0;color:var(--muted);font-size:13px
 border-radius:999px;margin:10px 6px 0 0;background:#eef2f7;color:var(--muted)}
 .badge.m{background:#e8f0fe;color:var(--blue)}.badge.d{background:#fff4e0;color:var(--amber)}
 section.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
-padding:20px 24px;margin-top:20px}
+padding:20px 24px;margin-top:20px;min-width:0}
 h2{font-size:17px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;margin:10px 0}
+.tblwrap table{margin:0}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
 th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
 th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.4px;
@@ -667,51 +839,87 @@ def build_body(data):
     P.append('</ul></section>')
 
     ranked = s.get("ranked") or []
-    if ranked:
-        P.append('<section class="card"><h2>Overall ranking</h2>')
-        P.append('<table><thead><tr><th>#</th><th>Language</th>'
+    measured_ranked = s.get("measured_ranked") or [
+        r for r in ranked if (r.get("measured_weight_share") or 0) > 0
+    ]
+    documented_only = s.get("documented_only") or [
+        r for r in ranked if (r.get("measured_weight_share") or 0) == 0
+    ]
+
+    def _ranking_rows_html(rows_list, rank_key="rank"):
+        out = []
+        for r in rows_list:
+            pct = max(2.0, float(r["overall_score"]))
+            out.append(
+                '<tr><td>%s</td><td>%s</td>'
+                '<td><div class="bartrack"><div class="barfill" '
+                'style="width:%.0f%%"></div></div></td>'
+                '<td class="num"><strong>%.1f</strong></td>'
+                '<td class="num">%s%%</td><td class="num">%s%%</td>'
+                '<td class="num">%s%%</td></tr>'
+                % (_e(r.get(rank_key) or r.get("rank")), _e(r.get("label")), pct,
+                   r["overall_score"],
+                   _e(r.get("measured_weight_share")),
+                   _e(r.get("documented_weight_pct_of_total")),
+                   _e(r.get("missing_weight_pct_of_total"))))
+        return "".join(out)
+
+    if measured_ranked:
+        P.append('<section class="card"><h2>Measured languages ranking (this machine)</h2>')
+        P.append('<div class="tblwrap"><table><thead><tr><th>#</th><th>Language</th>'
                  '<th style="width:34%">Score / 100</th>'
                  '<th class="num">Score</th><th class="num">Measured '
                  'share</th><th class="num">Documented</th>'
                  '<th class="num">Missing</th></tr></thead><tbody>')
-        for r in ranked:
-            pct = max(2.0, float(r["overall_score"]))
-            P.append('<tr><td>%s</td><td>%s</td>'
-                     '<td><div class="bartrack"><div class="barfill" '
-                     'style="width:%.0f%%"></div></div></td>'
-                     '<td class="num"><strong>%.1f</strong></td>'
-                     '<td class="num">%s%%</td><td class="num">%s%%</td>'
-                     '<td class="num">%s%%</td></tr>'
-                     % (_e(r.get("rank")), _e(r.get("label")), pct,
-                        r["overall_score"],
-                        _e(r.get("measured_weight_share")),
-                        _e(r.get("documented_weight_pct_of_total")),
-                        _e(r.get("missing_weight_pct_of_total"))))
-        P.append('</tbody></table>')
+        P.append(_ranking_rows_html(measured_ranked, "measured_rank"))
+        P.append('</tbody></table></div>')
+        P.append('<p class="note">Only languages actually benchmarked on this '
+                 'machine appear above; unmeasured reference languages are '
+                 'listed separately below so 0%-measured entries never '
+                 'distort measured rankings.</p></section>')
+
+    if documented_only:
+        title = ('Unmeasured reference languages (0% measured &mdash; documented KB only)'
+                 if measured_ranked else
+                 'Overall ranking (documented KB only &mdash; 0% measured)')
+        P.append('<section class="card"><h2>%s</h2>' % title)
+        P.append('<div class="tblwrap"><table><thead><tr><th>#</th><th>Language</th>'
+                 '<th style="width:34%">Score / 100</th>'
+                 '<th class="num">Score</th><th class="num">Measured '
+                 'share</th><th class="num">Documented</th>'
+                 '<th class="num">Missing</th></tr></thead><tbody>')
+        P.append(_ranking_rows_html(documented_only, "rank"))
+        P.append('</tbody></table></div>')
         P.append('<p class="note">"Measured share" = percentage of the '
                  'effective weight that this run\'s own measurements back, '
-                 'after redistribution. Languages measured on few workloads '
-                 '(or without a documented entry) carry larger uncertainty.'
-                 '</p>')
+                 'after redistribution. Install toolchains or run a campaign '
+                 'to promote entries into the measured ranking.</p>')
         P.append('</section>')
 
     sp3 = s.get("spid3r") or {}
+    rep_lbl = sp3.get("representative_label") or "production representative"
     P.append('<section class="card" id="spid3r">'
              '<h2>Spid3r &mdash; subject language report</h2>')
     P.append('<p class="note">Spid3r is the language this tool exists to '
-             'measure. Its ranking row aggregates ALL engine variants '
+             'measure. Its ranking row uses its production representative '
+             '(<code>%s</code>) for apples-to-apples comparison against '
+             'release/JIT baselines; all checksum-verified engine variants '
              '(tree-walk, VM, VM&nbsp;<code>--no-opt</code>, bytecode, '
-             'native&nbsp;<code>--release</code>) via a geomean of the '
-             'checksum-verified measurements; the per-variant detail is in '
-             'the tables below and in <code>runtime_comparison.html</code>.'
-             '</p>')
+             'native&nbsp;<code>--release</code>) remain transparently '
+             'disclosed in the tables below and in '
+             '<code>runtime_comparison.html</code>.</p>' % _e(rep_lbl))
     subj = sp3.get("subject")
     if subj:
         P.append('<div class="kpis">')
+        m_rank = subj.get("measured_rank")
+        m_tot = subj.get("measured_total") or len(measured_ranked)
+        rank_str = "#%s" % _e(m_rank if m_rank else subj.get("rank"))
+        rank_sub = ("of %d measured languages (overall #%s of %d)" % (
+            m_tot, _e(subj.get("rank")), len(ranked))
+            if m_rank else "of %d reference languages (0%% measured)" % len(ranked))
         P.append('<div class="kpi"><div class="l">Subject rank</div>'
-                 '<div class="v">#%s</div><div class="s">of %d ranked '
-                 'languages</div></div>'
-                 % (_e(subj.get("rank")), len(ranked)))
+                 '<div class="v">%s</div><div class="s">%s</div></div>'
+                 % (rank_str, rank_sub))
         P.append('<div class="kpi"><div class="l">Overall score</div>'
                  '<div class="v">%s</div><div class="s">/ 100</div></div>'
                  % _e(subj.get("score")))
@@ -728,7 +936,7 @@ def build_body(data):
     if sp3.get("variants"):
         P.append('<h3>Engine variants &mdash; geomean slowdown '
                  '(checksum-verified)</h3>')
-        P.append('<table><thead><tr><th>Spid3r variant</th>'
+        P.append('<div class="tblwrap"><table><thead><tr><th>Spid3r variant</th>'
                  '<th class="num">vs PHP</th><th class="num">vs Python</th>'
                  '<th class="num">vs fastest measured</th>'
                  '</tr></thead><tbody>')
@@ -739,7 +947,7 @@ def build_body(data):
                      '<td class="num">%s</td><td class="num">%s</td></tr>'
                      % (_e(v.get("label")), _x(v.get("vs_php")),
                         _x(v.get("vs_python")), _x(v.get("vs_fastest"))))
-        P.append('</tbody></table>')
+        P.append('</tbody></table></div>')
         # Per-workload absolute medians: Spid3r variants vs the verified
         # baselines, so the per-workload picture is visible without opening
         # the runtime comparison report.
@@ -753,7 +961,7 @@ def build_body(data):
             for k in var_keys:
                 head += '<th class="num">%s</th>' % _e(_label(k))
             head += '</tr>'
-            P.append('<table><thead>%s</thead><tbody>' % head)
+            P.append('<div class="tblwrap"><table><thead>%s</thead><tbody>' % head)
             for w in wls:
                 b = w.get("baselines") or {}
                 row = '<tr><td>%s. %s</td><td class="num">%s</td>' \
@@ -766,7 +974,7 @@ def build_body(data):
                         (w.get("spid3r_ms") or {}).get(k)))
                 row += '</tr>'
                 P.append(row)
-            P.append('</tbody></table>')
+            P.append('</tbody></table></div>')
             P.append('<p class="note">Workload B (JSON round-trip) has no '
                      'compiled-native reference by design; languages whose '
                      'standard library ships no JSON serializer are '
@@ -787,7 +995,7 @@ def build_body(data):
     if ranked:
         P.append('<section class="card"><h2>Per-criterion detail</h2>')
         crits = s.get("criteria") or {}
-        P.append('<table><thead><tr><th>Language</th>')
+        P.append('<div class="tblwrap"><table><thead><tr><th>Language</th>')
         for ck, cs in crits.items():
             P.append('<th class="num">%s</th>' % _e(cs.get("label", ck)))
         P.append('</tr></thead><tbody>')
@@ -807,7 +1015,7 @@ def build_body(data):
                              % (cls, _e("%s: %s" % (prov, c.get("evidence"))),
                                 _e(sc)))
             P.append('</tr>')
-        P.append('</tbody></table>')
+        P.append('</tbody></table></div>')
         P.append('<p class="note">Hover a score for its evidence. Blue tags = '
                  'measured this run; amber tags = documented judgment.</p>')
         P.append('</section>')
@@ -822,7 +1030,7 @@ def build_body(data):
         P.append('</ul></section>')
 
     P.append('<section class="card"><h2>Criteria &amp; weights</h2>')
-    P.append('<table><thead><tr><th>Criterion</th><th>Provenance</th>'
+    P.append('<div class="tblwrap"><table><thead><tr><th>Criterion</th><th>Provenance</th>'
              '<th class="num">Weight</th><th>What it means</th></tr>'
              '</thead><tbody>')
     for ck, cs in (s.get("criteria") or {}).items():
@@ -833,7 +1041,7 @@ def build_body(data):
                     _e(cs.get("provenance")),
                     _e(("%s%%" % round(100 * w, 1)) if w is not None else "n/a"),
                     _e(cs.get("desc", ""))))
-    P.append('</tbody></table></section>')
+    P.append('</tbody></table></div></section>')
 
     P.append('<section class="card"><h2>Limitations &amp; framework context'
              '</h2><ul>')

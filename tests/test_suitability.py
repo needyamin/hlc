@@ -243,5 +243,95 @@ class TestSummarize(unittest.TestCase):
             self.assertIn("measured_share_note", s)
 
 
+class TestPhase8MethodologyFixes(unittest.TestCase):
+    def test_production_variant_not_diluted_by_noopt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = {"workloads": {"prime": {
+                "verified": True, "id": "A", "title": "Prime",
+                "expected_checksum": "RESULT x",
+                "rows": [
+                    {"key": "rust", "runtime": "Rust", "group": "reference",
+                     "compute_ms": 2.0, "peak_rss_bytes": 4_000_000,
+                     "cpu_user_s": 0.002, "cpu_kernel_s": 0.001},
+                    {"key": "php", "runtime": "PHP", "group": "baseline",
+                     "compute_ms": 40.0, "peak_rss_bytes": 16_000_000,
+                     "cpu_user_s": 0.03, "cpu_kernel_s": 0.01},
+                    {"key": "spid3r_native", "runtime": "Spid3r native",
+                     "group": "spid3r", "compute_ms": 8.0,
+                     "peak_rss_bytes": 5_000_000, "cpu_user_s": 0.004,
+                     "cpu_kernel_s": 0.001},
+                    {"key": "spid3r_tw", "runtime": "Spid3r tw",
+                     "group": "spid3r", "compute_ms": 40.0,
+                     "peak_rss_bytes": 12_000_000, "cpu_user_s": 0.04,
+                     "cpu_kernel_s": 0.01},
+                    {"key": "spid3r_vm_noopt", "runtime": "Spid3r vm noopt",
+                     "group": "spid3r", "compute_ms": 120.0,
+                     "peak_rss_bytes": 12_000_000, "cpu_user_s": 0.10,
+                     "cpu_kernel_s": 0.02},
+                ],
+            }}, "summary": {"slowdown": {
+                "spid3r_native": {"vs_php": {"geomean": 0.2},
+                                  "vs_python": {}, "vs_fastest": {"geomean": 4.0}},
+                "spid3r_vm_noopt": {"vs_php": {"geomean": 3.0},
+                                    "vs_python": {}, "vs_fastest": {"geomean": 60.0}},
+            }}}
+            pathlib.Path(tmp, "runtime_comparison.json").write_text(
+                json.dumps(data), encoding="utf-8")
+            d = SU.build({"target": {}}, C.normalize({}), tmp)
+            m = [r for r in d["ranked"] if r["language"] == "matrix"][0]
+            self.assertEqual(d["spid3r"]["representative_variant"], "spid3r_native")
+            self.assertEqual(m["criteria"]["compute_performance"]["evidence"], "geomean 8.0")
+            self.assertEqual(len(d["spid3r"]["variants"]), 2)
+
+    def test_measured_languages_ranked_before_documented_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_rc(tmp)
+            d = SU.build({"target": {}}, C.normalize({}), tmp)
+            measured = d["measured_ranked"]
+            doc_only = d["documented_only"]
+            self.assertTrue(len(measured) >= 4)
+            self.assertTrue(len(doc_only) >= 5)
+            self.assertTrue(all(r["measured_weight_share"] > 0 for r in measured))
+            self.assertTrue(all(r["measured_weight_share"] == 0 for r in doc_only))
+            first_doc_idx = next(
+                i for i, r in enumerate(d["ranked"]) if r["measured_weight_share"] == 0
+            )
+            self.assertEqual(first_doc_idx, len(measured))
+
+    def test_campaign_http_scoring_and_guards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            camp_ok = {
+                "comparable": True,
+                "sites": [
+                    {"site_id": "go-app", "aggregated": {
+                        "overall_rps": {"median": 40000.0, "stddev": 200.0}}},
+                    {"site_id": "spid3r-app", "aggregated": {
+                        "overall_rps": {"median": 20000.0, "stddev": 100.0}}},
+                ],
+                "leaderboard": [
+                    {"site_id": "go-app", "language": "go",
+                     "overall_rps": 40000.0, "p95_ms": 1.2, "error_pct": 0.0},
+                    {"site_id": "spid3r-app", "language": "spid3r",
+                     "overall_rps": 20000.0, "p95_ms": 2.4, "error_pct": 0.0},
+                ],
+            }
+            pathlib.Path(tmp, "campaign.json").write_text(
+                json.dumps(camp_ok), encoding="utf-8")
+            d = SU.build({"target": {}}, C.normalize({}), tmp)
+            m = [r for r in d["ranked"] if r["language"] == "matrix"][0]
+            self.assertIsNotNone(m["criteria"]["http_throughput"]["score"])
+            self.assertIsNotNone(m["criteria"]["http_latency"]["score"])
+            self.assertIsNotNone(m["criteria"]["http_stability"]["score"])
+            self.assertIn("RPS", m["criteria"]["http_throughput"]["evidence"])
+
+            # Non-comparable campaign must refuse HTTP scoring.
+            camp_bad = dict(camp_ok, comparable=False)
+            pathlib.Path(tmp, "campaign.json").write_text(
+                json.dumps(camp_bad), encoding="utf-8")
+            d2 = SU.build({"target": {}}, C.normalize({}), tmp)
+            m2 = [r for r in d2["ranked"] if r["language"] == "matrix"][0]
+            self.assertIsNone(m2["criteria"]["http_throughput"]["score"])
+
+
 if __name__ == "__main__":
     unittest.main()

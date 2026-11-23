@@ -14,6 +14,7 @@ from . import adapters
 from . import grading, report
 from . import http_client
 from . import paths
+from . import target_manager
 from .browser import cdp
 from .engine import Benchmark
 from .schema import ensure_current
@@ -157,11 +158,19 @@ def environment_info(cfg, pf=None):
 
 
 def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
-                  bench_holder=None):
+                  bench_holder=None, auto_start_target=True,
+                  keep_target_alive=False):
     """Execute a full run and write config.json, results.json, report.html.
 
     bench_holder, when supplied, receives the live Benchmark instance under
     the key "bench" so a UI can request a graceful stop mid-run.
+
+    When ``auto_start_target`` is True (the default) and the configured target
+    is a loopback URL that refuses connections AND matches a launchable local
+    spec under ``root_dir/targets/``, that local target is started
+    automatically before running preflight again. If ``keep_target_alive`` is
+    False, any target started by this call is stopped cleanly when the run
+    finishes.
     """
     cfg = C.normalize(cfg)
     # Never reuse a cached preflight that belongs to a different target OR a
@@ -178,19 +187,50 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
     mode = "live_blackbox"
     run_id = "run-" + stamp()
 
+    # ---- dynamic auto-start for matching local native targets --------------
+    # Only activates when the target is loopback, currently refusing
+    # connections, AND a launchable local spec exists under root_dir/targets/.
+    # Remote targets and unknown loopback ports are never substituted.
+    auto_started_site = ""
+    tp = pf.get("target_probe") or {}
+    _tp_err = str(tp.get("error") or "")
+    if (auto_start_target
+            and int(tp.get("status") or 0) == 0
+            and "ConnectionRefused" in _tp_err
+            and is_loopback(cfg)
+            and target_manager.resolve_target_for_cfg(cfg, root_dir) is not None):
+        try:
+            started_info = target_manager.ensure_target_running(
+                cfg, root_dir, log=log)
+            if started_info.get("started"):
+                auto_started_site = started_info.get("site_id") or ""
+            if started_info.get("started") or started_info.get("already_running"):
+                pf = preflight(cfg)
+                pf["target_url"] = cfg["target_url"]
+                tp = pf.get("target_probe") or {}
+                _tp_err = str(tp.get("error") or "")
+        except Exception as ex:
+            if log:
+                log.add("Auto-start failed for %s: %s"
+                        % (cfg["target_url"], ex), "error")
+            raise RuntimeError(
+                "Preflight failed: target %s is unreachable and auto-start "
+                "failed (%s). No run directory or report was generated."
+                % (cfg["target_url"], ex)) from ex
+
     # ---- fail fast on a dead target ----------------------------------------
     # A connection-refused preflight means nothing is listening: every request
     # in the run would be a transport failure and the report would contain no
     # measurable evidence (0.00 ms latency, 0 bytes). Refuse the run instead
     # of burning 30+ seconds on a useless report. DNS failures are treated the
     # same way; timeouts are NOT — a slow-but-alive target is a real result.
-    tp = pf.get("target_probe") or {}
-    _tp_err = str(tp.get("error") or "")
     if int(tp.get("status") or 0) == 0 and (
             "ConnectionRefused" in _tp_err
             or "getaddrinfo failed" in _tp_err
             or "nodename nor servname" in _tp_err
             or "Name or service not known" in _tp_err):
+        if auto_started_site and not keep_target_alive:
+            target_manager.stop_target(auto_started_site, root=root_dir)
         msg = ("Preflight failed: target %s is unreachable (%s). Start the "
                "target web application first, then re-run — e.g. this tool's "
                "practice target: python scripts/demo_target.py --port 8090, "
@@ -202,6 +242,19 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
             log.add(msg, "error")
         raise RuntimeError(msg)
 
+    try:
+        return _execute_benchmark(cfg, root_dir, pf, mode, run_id,
+                                  log=log, bench_holder=bench_holder)
+    finally:
+        if auto_started_site and not keep_target_alive:
+            if log:
+                log.add("Stopping auto-started local target '%s'"
+                        % auto_started_site)
+            target_manager.stop_target(auto_started_site, root=root_dir)
+
+
+def _execute_benchmark(cfg, root_dir, pf, mode, run_id, log=None,
+                       bench_holder=None):
     run_dir = os.path.join(paths.runs_dir(root_dir, cfg), run_id)
     os.makedirs(run_dir, exist_ok=True)
 
@@ -328,9 +381,7 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
                 log.add("Running cross-language runtime comparison "
                         "(%s repeats per variant, pinned checksums)"
                         % rcfg.get("repeats", 5))
-            # write_html=False: the comparison is embedded in report.html —
-            # a run produces ONE report page, no standalone comparison page.
-            rc_data = RC.run(cfg, run_dir, log=log, write_html=False)
+            rc_data = RC.run(cfg, run_dir, log=log, write_html=True)
             results["runtime_comparison"] = RC.summarize(rc_data)
         except Exception as ex:
             results["runtime_comparison"] = {
@@ -365,10 +416,12 @@ def run_benchmark(cfg, root_dir, log=None, preflight_result=None,
                    results["adjudication"]["health_score"]),
                 "error" if "NO-GO" in results["adjudication"]["verdict"]
                 else "info")
+    rc_html_path = os.path.join(run_dir, "runtime_comparison.html")
     return {"run_id": run_id, "run_dir": run_dir,
             "results_path": results_path, "report_path": report_path,
             "status_path": os.path.join(run_dir, "status.json"),
             "runtime_comparison": bool(results.get("runtime_comparison")),
+            "has_runtime_comparison_html": os.path.isfile(rc_html_path),
             "verdict": results["adjudication"]["verdict"],
             "health_score": results["adjudication"]["health_score"]}
 
@@ -404,6 +457,8 @@ def _run_row(d, name):
         "health_score": v.get("health_score"),
         "has_report": has_report,
         "has_results": bool(res),
+        "has_runtime_comparison_html": os.path.isfile(
+            os.path.join(d, "runtime_comparison.html")),
         # v2 dimensions (absent on v1 runs -> empty string / None)
         "schema_version": res.get("schema_version"),
         "benchmark_mode": res.get("benchmark_mode", ""),

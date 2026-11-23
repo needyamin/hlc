@@ -947,12 +947,14 @@ border-radius:999px;margin:10px 6px 0 0;background:#eef2f7;color:var(--muted)}
 .badge.warn{background:#fff4e0;color:var(--amber)}
 .badge.bad{background:#fdecec;color:var(--red)}
 section.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
-padding:20px 24px;margin-top:20px}
+padding:20px 24px;margin-top:20px;min-width:0}
 h2{font-size:17px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 h3{font-size:14px;margin:18px 0 6px}
 p{margin:0 0 10px}.note{font-size:12px;color:var(--muted)}
 code{font-family:var(--mono);font-size:.88em;background:#f0f2f6;border:1px
 solid #e6e9f0;border-radius:4px;padding:1px 5px}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;margin:10px 0}
+.tblwrap table{margin:0}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0}
 th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
 th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.4px;
@@ -1069,8 +1071,10 @@ def build_body(data, include_page_header=False):
 
     rng = s.get("slowdown_range") or {}
     P.append('<div class="kpis">')
-    for n, l in [("%s&times;" % _f(rng.get("min")), "best Spid3r slowdown"),
-                 ("%s&times;" % _f(rng.get("max")), "worst Spid3r slowdown"),
+    _rmin = ("%s&times;" % _f(rng.get("min"))) if rng.get("min") is not None else "n/a"
+    _rmax = ("%s&times;" % _f(rng.get("max"))) if rng.get("max") is not None else "n/a"
+    for n, l in [(_rmin, "best Spid3r slowdown"),
+                 (_rmax, "worst Spid3r slowdown"),
                  (_e(s.get("workloads_verified", 0)), "verified workloads"),
                  (_e(s.get("variants", 0)), "measured runtime variants")]:
         P.append('<div class="kpi"><div class="n">%s</div><div class="l">%s</div>'
@@ -1118,7 +1122,7 @@ def build_body(data, include_page_header=False):
                          '<div class="barval">%s ms</div></div>'
                          % (_e(r["runtime"]), tag, band, pct, color,
                             _f(r["compute_ms"], 3)))
-            P.append('<table><thead><tr><th>Runtime / engine</th><th>Where</th>'
+            P.append('<div class="tblwrap"><table><thead><tr><th>Runtime / engine</th><th>Where</th>'
                      '<th class="num">Median</th>'
                      '<th class="num">Mean &plusmn; CI95</th>'
                      '<th class="num">Stdev</th><th class="num">CV%</th>'
@@ -1161,7 +1165,7 @@ def build_body(data, include_page_header=False):
                             _f(st.get("min_ms"), 3),
                             _f(st.get("max_ms"), 3),
                             q))
-            P.append("</tbody></table>")
+            P.append("</tbody></table></div>")
             P.append('<p class="note">Median of %s in-process repeats. '
                      'CI95 = t-based 95%% confidence interval of the mean; '
                      'CV%% = coefficient of variation (stdev / mean). The grey '
@@ -1183,7 +1187,7 @@ def build_body(data, include_page_header=False):
         wids = sorted({k for e in sd.values()
                        for b in ("vs_php", "vs_python", "vs_fastest")
                        for k in ((e.get(b) or {}).get("workloads") or {})})
-        P.append("<table><thead><tr><th rowspan=\"2\">Spid3r variant</th>")
+        P.append('<div class="tblwrap"><table><thead><tr><th rowspan="2">Spid3r variant</th>')
         for b in ("PHP", "Python", "Fastest"):
             P.append('<th class="num" colspan="%d">vs %s</th>'
                      % (len(wids) + 1, b))
@@ -1206,7 +1210,7 @@ def build_body(data, include_page_header=False):
                 P.append('<td class="num"><strong>%s</strong></td>'
                          % ("%.2f&times;" % g if g else "n/a"))
             P.append("</tr>")
-        P.append("</tbody></table></section>")
+        P.append("</tbody></table></div></section>")
 
     mx = s.get("matrix") or {}
     if mx:
@@ -1217,7 +1221,7 @@ def build_body(data, include_page_header=False):
                  'workloads, so a wrong-checksum variant can never enter a '
                  'ratio.</p>')
         keys = sorted(mx.keys())
-        P.append('<table><thead><tr><th>Runtime</th>')
+        P.append('<div class="tblwrap"><table><thead><tr><th>Runtime</th>')
         for k in keys:
             P.append('<th class="num">%s</th>'
                      % _e(mx[k].get("label", k)))
@@ -1232,15 +1236,16 @@ def build_body(data, include_page_header=False):
                     P.append('<td class="num">%s</td>'
                              % ("%.2f&times;" % v if v else "n/a"))
             P.append("</tr>")
-        P.append("</tbody></table></section>")
+        P.append("</tbody></table></div></section>")
 
     q = s.get("quality") or {}
     if q:
         P.append('<section class="card"><h2>Measurement quality</h2>')
         P.append('<div class="kpis">')
+        _wcv = (_f(q.get("worst_cv_pct"), 1) + "%") if q.get("worst_cv_pct") is not None else "n/a"
         for n, l in [(_e(q.get("stable_variants", 0)), "stable variants"),
                      (_e(q.get("flagged_variants", 0)), "flagged variants"),
-                     (_f(q.get("worst_cv_pct"), 1) + "%", "worst run-to-run CV"),
+                     (_wcv, "worst run-to-run CV"),
                      (_e(repeats), "repeats per variant")]:
             P.append('<div class="kpi"><div class="n">%s</div><div class="l">'
                      "%s</div></div>" % (n, l))
@@ -1252,8 +1257,8 @@ def build_body(data, include_page_header=False):
                  'floor of the 1 ms <code>now_ms()</code> clock), or when '
                  'fewer than 5 repeats were collected. Flags are advisory: '
                  'the numbers stay measured, but compare them with care.'
-                 '</p>' % (_f(thr.get("noisy_cv_pct"), 0),
-                           _f(thr.get("timer_floor_ms"), 0)))
+                 '</p>' % (_f(thr.get("noisy_cv_pct", _NOISY_CV_PCT), 0),
+                           _f(thr.get("timer_floor_ms", _TIMER_FLOOR_MS), 0)))
         detail = q.get("flag_detail") or []
         if detail:
             P.append("<ul>")
@@ -1266,12 +1271,12 @@ def build_body(data, include_page_header=False):
         P.append("</section>")
 
     P.append('<section class="card"><h2>Environment &amp; method</h2>')
-    P.append("<table><thead><tr><th>Component</th><th>Version</th></tr>"
+    P.append('<div class="tblwrap"><table><thead><tr><th>Component</th><th>Version</th></tr>'
              "</thead><tbody>")
     for k, v in env.items():
         P.append("<tr><td>%s</td><td><code>%s</code></td></tr>"
                  % (_e(k), _e(v)))
-    P.append("</tbody></table>")
+    P.append("</tbody></table></div>")
     if docker_rows:
         P.append('<p class="note"><strong>Docker rows belong to an archived, '
                  'differently-instrumented run</strong> (container CPU / '

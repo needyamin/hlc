@@ -9,6 +9,7 @@
 
   let CFG = null;
   let PRESETS = [];
+  let LOCAL_TARGETS = [];
   let PATHS = [];
   let lastLogSeq = 0;
   let rpsHistory = [];
@@ -40,6 +41,9 @@
     $("max-concurrency").value = cfg.max_concurrency;
     $("request-timeout").value = cfg.request_timeout_s;
     $("keep-alive").checked = !!cfg.keep_alive;
+    const rc = cfg.runtime_comparison || {};
+    if ($("rc-enabled")) $("rc-enabled").checked = rc.enabled !== false;
+    if ($("rc-repeats")) $("rc-repeats").value = rc.repeats || 3;
     $("max-anon").value = cfg.guardrails.max_anon_mib;
     $("consecutive-samples").value = cfg.guardrails.consecutive_samples;
     $("min-free").value = cfg.guardrails.min_host_free_gb;
@@ -58,6 +62,7 @@
     renderPaths(cfg.paths || [{ path: "/", weight: 1 }]);
     renderSchedule(cfg.phases || []);
     renderChips();
+    renderLocalTargets();
   }
 
   function num(id, fallback) {
@@ -82,6 +87,9 @@
     c.max_concurrency = Math.max(1, num("max-concurrency", c.max_concurrency));
     c.request_timeout_s = Math.max(1, num("request-timeout", c.request_timeout_s));
     c.keep_alive = $("keep-alive").checked;
+    c.runtime_comparison = Object.assign({}, c.runtime_comparison || {});
+    if ($("rc-enabled")) c.runtime_comparison.enabled = $("rc-enabled").checked;
+    if ($("rc-repeats")) c.runtime_comparison.repeats = Math.max(1, Math.min(20, Math.round(num("rc-repeats", c.runtime_comparison.repeats || 3))));
     c.cooldown_s = Math.max(0, num("cooldown-s", c.cooldown_s));
     c.reprobe_s = Math.max(0, num("reprobe-s", c.reprobe_s));
     c.guardrails = {
@@ -170,6 +178,43 @@
         renderPaths(PATHS);
       };
       box.appendChild(row);
+    });
+  }
+
+  function renderLocalTargets() {
+    const wrap = $("local-targets-wrap");
+    const box = $("local-targets");
+    if (!wrap || !box) return;
+    if (!LOCAL_TARGETS || !LOCAL_TARGETS.length) {
+      wrap.style.display = "none";
+      return;
+    }
+    wrap.style.display = "block";
+    const curUrl = ($("url").value || "").trim();
+    const curSite = (CFG && CFG.target && CFG.target.site_id) || "";
+    box.innerHTML = "";
+    LOCAL_TARGETS.forEach(t => {
+      const b = document.createElement("button");
+      const portMatch = curUrl.indexOf(":" + t.host_port) !== -1;
+      const isActive = (curSite && curSite === t.site_id) || (!curSite && portMatch);
+      b.className = "chip" + (isActive ? " active" : "");
+      b.type = "button";
+      b.title = (t.language || "") + " " + (t.framework || "") + " (" + t.target_url + ")";
+      b.textContent = t.site_id + " :" + t.host_port + (t.running ? " ●" : "");
+      b.onclick = async () => {
+        try {
+          toast("Switching target to " + t.site_id + " (:" + t.host_port + ") ...", "warn");
+          const r = await api("/api/targets/select", {
+            method: "POST",
+            body: JSON.stringify({ site_id: t.site_id, start: true })
+          });
+          CFG = r.config;
+          LOCAL_TARGETS = r.targets || LOCAL_TARGETS;
+          fill(CFG);
+          toast("Target set to " + t.site_id + " (" + CFG.target_url + ") and ready.", "good");
+        } catch (e) { toast(e.message, "bad"); }
+      };
+      box.appendChild(b);
     });
   }
 
@@ -267,6 +312,9 @@
           "</td><td>" + esc(r.target_url) + "</td><td>" + esc(r.profile) +
           "</td><td>" + esc(r.verdict || r.state) + "</td><td>" + (r.has_report
             ? '<a href="/report/' + esc(r.run_id) + '" target="_blank">HTML</a> ' +
+              (r.has_runtime_comparison_html
+                ? '<a href="/runs/' + esc(r.run_id) + '/runtime_comparison.html" target="_blank">Comparison</a> '
+                : '') +
               '<a href="/runs/' + esc(r.run_id) + '/results.json" target="_blank">JSON</a>'
             : esc(r.state)) + "</td></tr>";
       }).join("") + "</tbody></table>";
@@ -433,7 +481,9 @@
         "/100", good ? "good" : warn ? "warn" : "bad");
       $("report-link").innerHTML =
         '<a href="/report/' + esc(res.run_id) + '" target="_blank">Open HTML report &#8599;</a>' +
-        '<span class="muted">single report: comparison + suitability embedded</span>' +
+        (res.has_runtime_comparison_html
+          ? '<a href="/runs/' + esc(res.run_id) + '/runtime_comparison.html" target="_blank">Runtime Comparison HTML &#8599;</a>'
+          : '') +
         (res.runtime_comparison
           ? '<a href="/runs/' + esc(res.run_id) + '/runtime_comparison.json" target="_blank">runtime_comparison.json &#8599;</a>'
           : '') +
@@ -557,6 +607,7 @@
       const b = await api("/api/bootstrap");
       CFG = b.config;
       PRESETS = b.presets || [];
+      LOCAL_TARGETS = b.local_targets || [];
       const dp = $("docker-pill");
       if (dp) dp.parentElement.removeChild(dp);
       fill(CFG);

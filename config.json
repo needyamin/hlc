@@ -1,30 +1,30 @@
 {
   "schema_version": 2,
   "runtime_environment": "windows",
-  "target_url": "http://127.0.0.1:18093/",
+  "target_url": "http://localhost:18091/",
   "mode": "direct",
-  "profile": "smoke",
+  "profile": "standard",
   "health_path": "/health",
   "paths": [
     {
       "path": "/",
-      "weight": 1
+      "weight": 30
     },
     {
       "path": "/health",
-      "weight": 1
+      "weight": 20
     },
     {
       "path": "/catalog",
-      "weight": 1
+      "weight": 25
     },
     {
       "path": "/cart",
-      "weight": 1
+      "weight": 25
     }
   ],
   "headers": {},
-  "max_concurrency": 20,
+  "max_concurrency": 300,
   "request_timeout_s": 12.0,
   "keep_alive": true,
   "sample_period_s": 1.0,
@@ -34,64 +34,66 @@
     {
       "name": "01-plateau",
       "label": "Idle plateau (C=0)",
-      "duration_s": 3,
+      "duration_s": 120,
       "probe_hz": 0.0,
       "role": "idle",
       "concurrency": 0
     },
     {
       "name": "02-warmup",
-      "label": "Warm-up (C=2)",
-      "duration_s": 3,
+      "label": "Warm-up (C=5)",
+      "duration_s": 30,
       "probe_hz": 1.0,
       "role": "active",
-      "concurrency": 2
+      "concurrency": 5
     },
     {
       "name": "03-ramp",
-      "label": "Ramp 2-5-10",
-      "duration_s": 6,
+      "label": "Ramp 5-10-25-50-100",
+      "duration_s": 100,
       "probe_hz": 1.0,
       "role": "active",
       "steps": [
-        2,
         5,
-        10
+        10,
+        25,
+        50,
+        100
       ],
-      "concurrency": 10
+      "concurrency": 100
     },
     {
       "name": "04-sustained",
-      "label": "Sustained (C=10)",
-      "duration_s": 6,
+      "label": "Sustained heavy (C=100)",
+      "duration_s": 180,
       "probe_hz": 1.0,
       "role": "sustained",
-      "concurrency": 10
+      "concurrency": 100
     },
     {
       "name": "05-spike",
-      "label": "Spike (C=15-20)",
-      "duration_s": 3,
+      "label": "Spike / break point (C=200-300)",
+      "duration_s": 45,
       "probe_hz": 1.0,
       "role": "spike",
       "steps": [
-        15,
-        20
+        200,
+        300
       ],
-      "concurrency": 20
+      "concurrency": 300
     },
     {
       "name": "06-soak",
-      "label": "Short soak (C=5)",
-      "duration_s": 3,
+      "label": "Endurance soak (C=50)",
+      "duration_s": 300,
       "probe_hz": 1.0,
       "role": "soak",
-      "concurrency": 5
+      "concurrency": 50
     },
     {
       "name": "07-zero-load",
       "label": "Zero-load recovery (C=0)",
-      "duration_s": 6,
+      "duration_s": 600,
       "probe_hz": 0.0,
       "role": "cooldown",
       "concurrency": 0
@@ -99,7 +101,7 @@
     {
       "name": "08-reprobe",
       "label": "Availability re-probe",
-      "duration_s": 3,
+      "duration_s": 60,
       "probe_hz": 1.0,
       "role": "reprobe",
       "concurrency": 0
@@ -107,26 +109,26 @@
   ],
   "benchmark_mode": "live_blackbox",
   "target": {
-    "site_id": "",
-    "group": "",
-    "language": "",
-    "runtime_version": "",
-    "framework": "",
-    "framework_version": "",
+    "site_id": "spid3r-http",
+    "group": "hlc-http",
+    "language": "matrix",
+    "runtime_version": "1.1.1",
+    "framework": "stdlib/http (AOT)",
+    "framework_version": "1.1.1",
     "image": "",
     "image_digest": "",
     "build_cmd": "",
-    "start_cmd": "",
-    "stack_label": ""
+    "start_cmd": "server.exe",
+    "stack_label": "matrix 1.1.1 / stdlib/http (AOT)"
   },
   "targets": [],
   "fairness": {
-    "warmup_s": 10,
+    "warmup_s": 0,
     "idle_baseline_s": 10,
     "repeats": 3,
     "seed": 7919,
     "aggregate": "median",
-    "cooldown_between_repeats_s": 15,
+    "cooldown_between_repeats_s": 5,
     "identical_workload": true,
     "cpuset_target": "",
     "cpuset_generator": "",
@@ -141,7 +143,7 @@
     "endpoint": "/__hlc/runtime"
   },
   "runtime_comparison": {
-    "enabled": false,
+    "enabled": true,
     "repeats": 3,
     "include_windows": true,
     "include_native": true,
